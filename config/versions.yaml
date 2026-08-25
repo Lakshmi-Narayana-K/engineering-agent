@@ -1,0 +1,137 @@
+# Pinned versions of everything upstream this platform runs on.
+#
+# The reason this file exists: the platform's security properties depend on
+# specific upstream behaviour, and "latest" silently changes it. Two concrete
+# examples from this migration. The isolation guarantees assume the Cursor CLI
+# still performs reads in-process without routing them through the ACP client -
+# if a future release starts sending fs/read_text_file, the boundary analysis
+# needs redoing. And the sandbox image is built from a version-addressed URL
+# rather than the install script at cursor.com/install, because that script
+# resolves to whatever is current and would make builds irreproducible.
+#
+# Observed on the running stack rather than declared aspirationally. Update this
+# file when a version changes, and re-run tests/security/ afterwards.
+
+captured: 2026-08-25
+observed_on: local developer stack, verified running
+
+# --- the pin that matters most ------------------------------------------------
+#
+# The Canvas is the entry point and it spawns the Agent Server itself, choosing
+# that server's version and its whole Python dependency set. So pinning the
+# Canvas transitively pins most of the stack, and conversely, letting the Canvas
+# float changes the Agent Server underneath us without any change on our side.
+#
+# Currently installed globally via npm with no version constraint. That is the
+# single largest reproducibility gap in the stack and the containerisation work
+# should close it.
+
+openhands_agent_canvas:
+  version: 1.15.0
+  source: "npm @openhands/agent-canvas"
+  install: global, UNPINNED - reproducibility gap
+  owns: browser UI, session transport, spawning the Agent Server
+  upgrade: check ACP provider config and permission-request behaviour first
+  fallback: none; it is the only supported Canvas
+
+# --- chosen by the Canvas, not by us ------------------------------------------
+#
+# These are already pinned with == by the Canvas, so they are stable for a given
+# Canvas version. Recorded for the audit trail, not because we select them.
+
+openhands_agent_server:
+  version: 1.42.1
+  source: "PyPI openhands-agent-server, via uvx"
+  pinned_by: openhands_agent_canvas
+  owns: conversation state, runtime, ACP client role
+  note: >
+    Holds the ACP client role, which is why it auto-approves permission
+    requests. That behaviour is the reason our policy proxy exists.
+
+openhands_sdk:
+  version: 1.42.1
+  pinned_by: openhands_agent_canvas
+openhands_tools:
+  version: 1.42.1
+  pinned_by: openhands_agent_canvas
+openhands_workspace:
+  version: 1.42.1
+  pinned_by: openhands_agent_canvas
+openhands_automation:
+  version: 1.8.0
+  source: "PyPI openhands-automation, via uvx"
+
+agent_client_protocol:
+  version: bundled with openhands_agent_server 1.42.1
+  source: "PyPI agent-client-protocol"
+  owns: JSON-RPC framing, request correlation, transport
+  note: >
+    The official ACP SDK is ALREADY a dependency of the Agent Server, which
+    matters for Phase 3: replacing our hand-written protocol plumbing means
+    using something already present in the stack, not adding a dependency.
+
+# --- the agent engine ---------------------------------------------------------
+
+cursor_cli:
+  version: 2026.08.11-e8db854
+  source: "https://downloads.cursor.com/lab/<version>/<os>/<arch>/agent-cli-package.tar.gz"
+  owns: reasoning, code search, in-process file and shell operations
+  bundles: node, ripgrep, cursorsandbox, crepectl
+  install_note: >
+    Built from the version-addressed download URL, not the cursor.com/install
+    script, so image builds are reproducible. The installer uses this same URL.
+  acp_capabilities_observed:
+    protocol_version: 1
+    mcp_transports: [http, sse]     # confirms ToolHive can be reached over HTTP
+    auth_methods: [cursor_login]
+    load_session: true
+  security_assumption: >
+    Performs file reads, file writes and terminal commands in-process without
+    routing them through the ACP client. Verified against 3MB of recorded
+    traffic: zero fs/read_text_file, fs/write_text_file or terminal/create
+    against 49 permission requests. The container boundary exists because of
+    this. Re-verify on upgrade.
+
+# --- sandbox image ------------------------------------------------------------
+
+sandbox_base_image:
+  version: "node:22.23-bookworm-slim"
+  why_node: >
+    The ACP shim runs on node, and the Canvas requires >= 22.12.0. Cursor
+    bundles its own node, so the base image supplies little beyond libc and CA
+    certificates.
+  host_node: v22.23.2
+  deliberately_absent:
+    - aws-cli    # an entire bypass path around MCP, ToolHive and their audit
+
+docker:
+  client: 29.6.0
+  server: 29.2.0
+  context_note: >
+    The host uses the Docker Desktop context, whose socket lives under
+    $HOME/.docker. Anything that redirects HOME loses that context and silently
+    falls back to a different daemon. The ACP shim skips its HOME redirection in
+    sandbox mode for exactly this reason.
+
+# --- not yet introduced -------------------------------------------------------
+#
+# Listed so version selection is a deliberate step when each phase starts, with
+# the known constraint recorded now rather than rediscovered later.
+
+toolhive:
+  status: NOT YET INTRODUCED     # Phase 5
+  constraint: >
+    Must expose MCP over http or sse, both of which the pinned Cursor CLI
+    advertises support for.
+
+dbhub:
+  status: NOT YET INTRODUCED     # Phase 7
+  constraint: >
+    Pin a release unaffected by the known read-only bypass advisories; review
+    them before selecting a version. Also blocked on database prerequisites.
+
+aws_mcp_server:
+  status: NOT YET INTRODUCED     # Phase 6
+  constraint: >
+    The currently configured aws-api-mcp-server is deprecated. Verify the
+    supported managed replacement against AWS documentation before adopting.
