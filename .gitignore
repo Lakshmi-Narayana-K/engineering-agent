@@ -36,3 +36,13 @@
 # Agent Canvas / Agent Server scratch state, if it lands here.
 /workspace/
 /.openhands/
+
+# ToolHive binary, release archives and runtime state. The version is pinned in
+# config/versions.yaml and re-downloaded by scripts/toolhive-install.sh; the
+# 124MB binary and its audit logs do not belong in git.
+/runtime/toolhive/bin/
+/runtime/toolhive/*.tar.gz
+/runtime/toolhive/checksums.txt
+/runtime/toolhive/config/
+/runtime/toolhive/data/
+/runtime/toolhive/state/

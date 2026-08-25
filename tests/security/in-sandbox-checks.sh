@@ -44,14 +44,28 @@ else
 fi
 
 # --- developer machine state must not exist inside ---------------------------
-for pair in "$HOME/.aws:host AWS config" "$HOME/.cursor/mcp.json:host Cursor MCP config"; do
-  path="${pair%%:*}"; label="${pair##*:}"
-  if [[ -e "$path" ]]; then
-    gap "$label absent" "present at $path"
-  else
-    pass "$label absent" "not present"
-  fi
-done
+if [[ -e "$HOME/.aws" ]]; then
+  gap "host AWS config absent" "present at \$HOME/.aws"
+else
+  pass "host AWS config absent" "not present"
+fi
+
+# The MCP config needs a sharper test than presence, because there is now
+# legitimately one: ours, generated to point at the ToolHive gateway. What must
+# NOT be here is the host's config, which spawns MCP servers directly with
+# `command` and `env` blocks carrying credential placeholders. So the check is
+# whether any server is defined as a local process rather than a gateway URL -
+# the difference between governed and ungoverned MCP access.
+MCP_CFG="$HOME/.cursor/mcp.json"
+if [[ ! -f "$MCP_CFG" ]]; then
+  pass "no ungoverned MCP config" "no mcp.json present"
+elif grep -qE '"(command|args|env)"[[:space:]]*:' "$MCP_CFG"; then
+  gap "no ungoverned MCP config" "mcp.json spawns servers directly, bypassing the gateway"
+elif grep -q '"url"' "$MCP_CFG"; then
+  pass "no ungoverned MCP config" "gateway URLs only, no direct server spawning"
+else
+  pass "no ungoverned MCP config" "no servers defined"
+fi
 
 # The developer's home is /home/<user> on the host; inside, HOME is the
 # container's own. Finding host paths at all would mean a bind mount leaked.

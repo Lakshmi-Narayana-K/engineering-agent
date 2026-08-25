@@ -63,6 +63,21 @@ MOUNTS=(
 
 # noexec on /tmp: scratch space should not become a place to stage a binary.
 
+# The governed MCP path. ToolHive's proxy is a host process on loopback, which a
+# container cannot reach, so the sandbox needs an explicit route to the host
+# gateway. Without this Cursor sees no MCP servers at all and the AWS, Rapid7 and
+# database capabilities disappear - which is precisely why the sandbox could not
+# become the default before ToolHive existed.
+#
+# This does widen the sandbox's network reach to host-published ports, so it is
+# worth being precise about the limit: host services bound to 127.0.0.1 are not
+# reachable this way on Docker Engine, and the gateway is reachable because
+# Docker Desktop proxies host.docker.internal to the host. The gateway is
+# therefore the intended entry point rather than an accidental one.
+NETWORK=(
+  --add-host "host.docker.internal:host-gateway"
+)
+
 HARDENING=(
   --user 1001:1001
   --cap-drop ALL
@@ -88,7 +103,7 @@ fi
 
 if [[ "$MODE" == exec ]]; then
   exec docker run --rm -i \
-    "${MOUNTS[@]}" "${HARDENING[@]}" "${ENV_ARGS[@]}" \
+    "${MOUNTS[@]}" "${NETWORK[@]}" "${HARDENING[@]}" "${ENV_ARGS[@]}" \
     --entrypoint /bin/bash \
     "$IMAGE" -c 'exec "$@"' _ "${EXEC_ARGS[@]}"
 fi
@@ -96,5 +111,5 @@ fi
 # ACP is a stdio protocol: the Agent Server writes requests on stdin and reads
 # responses on stdout, so nothing may be printed here that is not protocol.
 exec docker run --rm -i \
-  "${MOUNTS[@]}" "${HARDENING[@]}" "${ENV_ARGS[@]}" \
+  "${MOUNTS[@]}" "${NETWORK[@]}" "${HARDENING[@]}" "${ENV_ARGS[@]}" \
   "$IMAGE" acp

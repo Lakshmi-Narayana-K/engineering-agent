@@ -1,0 +1,125 @@
+# Which MCP servers exist, and exactly which tools each may expose.
+#
+# This file replaces the mcp.allowedServers and mcp.gatedTools blocks in
+# config/acp-permissions.json. The difference is not the syntax, it is who
+# enforces it. Those blocks were checked by our own shim while relaying an ACP
+# permission request, which only worked because Cursor chose to ask. ToolHive
+# enforces this list in the MCP request path itself: a tool absent from `tools`
+# is filtered out of tools/list AND refused at tools/call, whether or not
+# anything asked permission first.
+#
+# Verified on ToolHive v0.44.0 against a 5-tool server with 2 allowlisted:
+# tools/list returned 2, and calls to the other 3 failed with "tool not found".
+#
+# Default-deny is a property of the format: `tools` is an explicit list, and
+# ToolHive validates every name against what the server actually advertises, so
+# a typo fails at startup rather than silently exposing nothing - or worse,
+# silently exposing everything.
+#
+# Read by scripts/toolhive-up.sh. Tested by tests/security/run-toolhive-tests.sh.
+
+# --- how the gateway is reached ----------------------------------------------
+#
+# The proxy binds to loopback on the host. Two reasons, one of them discovered
+# the hard way:
+#
+#   1. Section 29 of the migration plan forbids exposing the gateway on
+#      0.0.0.0, and loopback is the narrowest option.
+#   2. ToolHive v0.44.0 binds where --host says but health-checks localhost, so
+#      a non-loopback bind never reaches "running" - the workload sits in
+#      "starting" forever even though the proxy is serving. Loopback is the only
+#      bind where readiness works.
+#
+# The agent sandbox is a container, so it cannot reach host loopback directly.
+# It resolves the gateway through host.docker.internal, which requires
+# --add-host=host.docker.internal:host-gateway on the sandbox. Verified working:
+# the sandbox gets an HTTP response from the gateway.
+
+gateway:
+  bind: 127.0.0.1
+  sandbox_hostname: host.docker.internal
+  audit: enabled            # --enable-audit
+  network_isolation: true   # --isolate-network, ToolHive's default
+
+# --- known limitation, recorded rather than worked around ---------------------
+#
+# With no OIDC provider configured, ToolHive logs: "the proxy will accept every
+# request unauthenticated and assign each a synthetic local-user identity with
+# no token or credential check". Audit records therefore carry
+# subjects.user_id = "nxtwave", which is a label, not an authenticated identity.
+#
+# The consequence: Cedar authorization policies cannot make per-user decisions
+# locally, because there is no real principal to decide about. Tool filtering
+# still works - it is not identity-dependent - so tool admission is genuinely
+# enforced while user-level authorization waits for an identity provider.
+#
+# This is acceptable locally, where the only caller is the developer's own
+# sandbox reached over loopback. It is NOT acceptable for a shared deployment,
+# and is a prerequisite for it.
+
+authorization:
+  identity: SYNTHETIC - no OIDC configured
+  cedar_policies: DEFERRED - require a real principal to be meaningful
+  enforced_today: tool admission via allowlist
+  required_for_deployment: OIDC provider, then Cedar policies
+
+# --- servers -----------------------------------------------------------------
+
+servers:
+
+  # Live and working. No credentials, so it is also the safest server to use as
+  # the gateway's own regression fixture.
+  - name: aws-documentation
+    enabled: true
+    registry: aws-documentation
+    proxy_port: 19103
+    purpose: AWS service behaviour and quota lookups during investigation
+    tools:
+      - search_documentation
+      - read_documentation
+    excluded:
+      # Not dangerous, but not needed either, and every exposed tool is surface
+      # area plus tokens spent on its description in the prompt.
+      - read_sections
+      - recommend
+      - search_table
+
+  # Phase 6. The currently configured awslabs.aws-api-mcp-server is deprecated,
+  # and the registry offers a containerised, network-isolated equivalent.
+  #
+  # The important boundary note: this server takes an operation as an argument,
+  # so ecs:DescribeServices and ecs:DeleteService are the SAME tool name. Tool
+  # filtering cannot separate them. IAM is what refuses the second one, which
+  # the baseline already proved with a policy simulation showing explicitDeny.
+  # ToolHive admits the tool; IAM authorizes the operation.
+  - name: aws-api
+    enabled: false
+    registry: aws-api
+    purpose: read-only AWS and CloudWatch investigation
+    blocked_on: Phase 6 - verify managed server, then wire credentials
+    tools: []
+    authorization_boundary: IAM, not ToolHive
+
+  # Phase 8. Currently a local checkout spawned directly by Cursor, which means
+  # no container, no network isolation and no audit. Moving it behind the
+  # gateway gets all three.
+  #
+  # Every tool needs individual review: names containing investigate, report,
+  # search or analyze do not imply read-only.
+  - name: rapid7-insightidr
+    enabled: false
+    purpose: security investigation lookups
+    blocked_on: Phase 8 - containerise the local checkout, then review each tool
+    tools: []
+
+  # Phase 7. Blocked on database prerequisites rather than on ToolHive: alpha
+  # has no MySQL, no reachable network path and no read-only role.
+  #
+  # When it lands, the hard boundary is the database account, not this config.
+  # Pin a DBHub release unaffected by the known read-only bypass advisories.
+  - name: dbhub
+    enabled: false
+    purpose: read-only SQL access for investigation
+    blocked_on: Phase 7 - database prerequisites, see knowledge/rds-access.md
+    tools: []
+    authorization_boundary: database read-only role, not ToolHive

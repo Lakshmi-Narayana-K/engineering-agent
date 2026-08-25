@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-08-25T14:39:06Z",
+  "toolhive": "ToolHive v0.44.0",
+  "total": 11,
+  "failures": 0,
+  "checks": [
+    {"check":"allowlisted tool advertised: search_documentation","state":"pass","detail":"present in tools/list"},
+    {"check":"allowlisted tool advertised: read_documentation","state":"pass","detail":"present in tools/list"},
+    {"check":"excluded tool hidden: read_sections","state":"pass","detail":"absent from tools/list"},
+    {"check":"excluded tool hidden: recommend","state":"pass","detail":"absent from tools/list"},
+    {"check":"excluded tool hidden: search_table","state":"pass","detail":"absent from tools/list"},
+    {"check":"excluded tool refused on call: read_sections","state":"pass","detail":"gateway refused: tool not found"},
+    {"check":"excluded tool refused on call: recommend","state":"pass","detail":"gateway refused: tool not found"},
+    {"check":"excluded tool refused on call: search_table","state":"pass","detail":"gateway refused: tool not found"},
+    {"check":"allowlisted tool callable","state":"pass","detail":"returned results through the gateway"},
+    {"check":"tool calls audited","state":"pass","detail":"2 mcp_tool_call events with id, subject and outcome"},
+    {"check":"sandbox can reach the gateway","state":"pass","detail":"HTTP 400 via host.docker.internal"}
+  ]
+}

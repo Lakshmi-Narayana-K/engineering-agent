@@ -119,10 +119,35 @@ docker:
 # the known constraint recorded now rather than rediscovered later.
 
 toolhive:
-  status: NOT YET INTRODUCED     # Phase 5
-  constraint: >
-    Must expose MCP over http or sse, both of which the pinned Cursor CLI
-    advertises support for.
+  version: 0.44.0
+  released: 2026-08-18
+  source: "github.com/stacklok/toolhive, release archive, checksum verified"
+  license: Apache-2.0
+  install: scripts/toolhive-install.sh (binary not committed, 124MB)
+  owns: MCP server registration, tool admission, per-call audit, network isolation
+  verified:
+    tools_list_filtered: true      # 2 of 5 tools advertised
+    tools_call_refused: true       # excluded tools fail with "tool not found"
+    audit_events: true             # mcp_tool_call with id, subject, outcome
+    reachable_from_sandbox: true   # via host.docker.internal
+  caveats:
+    pre_1_0: >
+      Version 0.x. Actively developed and Apache-2.0, but a security boundary on
+      a pre-1.0 dependency warrants pinning and reviewing release notes on
+      upgrade rather than tracking latest.
+    non_loopback_bind_broken: >
+      Binds where --host says but health-checks localhost, so any non-loopback
+      bind never reaches "running". Loopback is the only working bind, which is
+      also what the plan wants; the sandbox reaches it via host.docker.internal.
+    no_identity_without_oidc: >
+      Without an OIDC provider the proxy accepts every request unauthenticated
+      and assigns a synthetic local-user identity. Tool admission still works
+      because it is not identity-dependent, but Cedar per-user authorization is
+      not meaningful until a real principal exists.
+  upgrade: review release notes, re-run tests/security/run-toolhive-tests.sh
+  fallback: >
+    ContextForge, or temporarily reinstating the shim's MCP allowlist, which is
+    why that code is not deleted until this is proven in the default path.
 
 dbhub:
   status: NOT YET INTRODUCED     # Phase 7
