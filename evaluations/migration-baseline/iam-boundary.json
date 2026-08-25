@@ -1,0 +1,31 @@
+{
+  "capturedAt": "2026-08-25T13:49:14Z",
+  "profile": "nkb-agent-alpha",
+  "region": "ap-south-1",
+  "total": 21,
+  "unexpected": 0,
+  "inconclusive": 1,
+  "checks": [
+    {"check":"ecs list-clusters","expected":"allowed","result":"pass","detail":"permitted"},
+    {"check":"logs describe-log-groups","expected":"allowed","result":"pass","detail":"permitted"},
+    {"check":"lambda list-functions","expected":"allowed","result":"pass","detail":"permitted"},
+    {"check":"ecs delete-service","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"ecs update-service","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"logs delete-log-group","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"lambda delete-function","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"sqs delete-queue","expected":"AccessDenied","result":"skip","detail":"inconclusive - resource resolved before authz"},
+    {"check":"rds delete-db-instance","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"iam create-user","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"iam attach-user-policy","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"s3 list buckets","expected":"AccessDenied","result":"pass","detail":"AccessDenied from AWS"},
+    {"check":"sim sqs:DeleteQueue","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim sqs:SendMessage","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim sqs:PurgeQueue","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim ecs:DeleteService","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim lambda:UpdateFunctionCode","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim rds:DeleteDBInstance","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim iam:CreateUser","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim logs:DeleteLogGroup","expected":"deny","result":"pass","detail":"explicitDeny"},
+    {"check":"sim states:StartExecution","expected":"deny","result":"pass","detail":"explicitDeny"}
+  ]
+}

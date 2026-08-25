@@ -16,6 +16,7 @@ component that replaces it produces the same verdicts recorded here.
 |---|---|
 | `acp-policy-boundary.json` | 26 permission cases with verdict and post-migration owner |
 | `isolation.json` | 8 filesystem/environment checks, 7 currently open |
+| `iam-boundary.json` | 21 AWS authorization checks proving denial comes from AWS |
 | `policy-decisions.txt` | The 46 real decisions the running system has made |
 | `stack-status.txt` | `scripts/status.sh` at baseline |
 | `repo-integrity.txt` | `scripts/verify-product-repos-untouched.sh` at baseline |
@@ -25,6 +26,7 @@ Regenerate the first two with:
 ```bash
 node tests/security/run-policy-tests.mjs --json evaluations/migration-baseline/acp-policy-boundary.json
 bash tests/security/run-isolation-tests.sh --json evaluations/migration-baseline/isolation.json
+bash tests/security/run-iam-tests.sh      --json evaluations/migration-baseline/iam-boundary.json
 ```
 
 ## Results
@@ -65,13 +67,28 @@ ACP proxy — ours, the official SDK, or the conductor — can gate an operation
 Cursor performs in-process. Only the sandbox can. That is why Phase 2 comes
 before the ACP rewrite.
 
-## Not yet captured
+## IAM boundary: 20/21 as expected, 0 unexpected
 
-**Live IAM denial.** Every AWS case above is denied by our policy layer before
-a request reaches AWS, so these results prove our parser works, not that IAM
-would refuse. Proving that requires issuing a genuinely denied write (for
-example `ecs:DeleteService`) with the scoped credentials and recording the
-`AccessDenied`. It is safe in that it cannot succeed, but it is still a write
-attempt against a real account, so it needs explicit approval before it runs.
-It is the gate for deleting the custom AWS parser in Phase 5 and cannot be
-skipped.
+This is the one result that does not depend on our code being correct, which
+makes it the gate for deleting the custom AWS parser in Phase 5. Identity is
+`arn:aws:iam::934167421030:user/nkb-agent-readonly-alpha`. Seven destructive
+calls return `AccessDenied` from AWS, three granted reads succeed, and nine
+actions return `explicitDeny` from the IAM simulator.
+
+The test runs in two tiers, and the reason is worth keeping. A live call proves
+real-world behaviour but cannot always isolate authorization: SQS resolves the
+queue before evaluating IAM, so `sqs delete-queue` against an absent queue
+returns `NonExistentQueue` regardless of permissions. Read naively that looks
+like an allow, and on the first run this suite reported exactly that — a false
+positive that would have sent someone hunting a non-existent hole in the
+policy. `iam simulate-principal-policy` settles it: `explicitDeny`. The live
+tier now records that outcome as inconclusive and the simulator tier answers
+it, because the simulator decides authorization without performing the action.
+
+The simulator needs a profile that can read IAM, which the agent identity
+deliberately cannot. That tier therefore skips rather than fails when the
+profile is absent, so the suite still runs in CI or on a fresh machine.
+
+Every denied call is safe by construction: each targets a resource name that
+does not exist, so an unexpected allow still fails on lookup. There is no
+ordering of events in which this suite deletes anything.
