@@ -1,0 +1,120 @@
+#!/usr/bin/env node
+/**
+ * A fake Cursor CLI, used only by the security suite.
+ *
+ * The runner puts this directory at the front of PATH, so when the shim spawns
+ * `agent acp` it gets this instead of the real Cursor. That is the whole trick:
+ * the policy code under test runs unmodified and cannot tell the difference,
+ * because this speaks the same ACP wire format Cursor does.
+ *
+ * It issues one session/request_permission per case and records which option
+ * the shim selected. Cursor decides what to ask; we decide what to ask, which
+ * is what makes the result deterministic.
+ */
+
+import fs from "node:fs";
+import readline from "node:readline";
+
+const casesPath = process.env.NKB_POLICY_CASES;
+const resultsPath = process.env.NKB_POLICY_RESULTS;
+
+if (!casesPath || !resultsPath) {
+  process.stderr.write("fake-agent: NKB_POLICY_CASES and NKB_POLICY_RESULTS are required\n");
+  process.exit(2);
+}
+
+const ALLOW_OPTION = "opt-allow";
+const DENY_OPTION = "opt-deny";
+
+const cases = JSON.parse(fs.readFileSync(casesPath, "utf8")).cases;
+const results = new Map();
+
+/**
+ * Cursor renders tool arguments as a fenced JSON block inside toolCall.content
+ * rather than as a structured field, so a case's `args` has to be re-encoded
+ * that way for argument-level gating to see it at all.
+ */
+function toContent(args) {
+  if (!args) return undefined;
+  return [{ type: "content", content: { type: "text", text: "```json\n" + JSON.stringify(args, null, 2) + "\n```" } }];
+}
+
+function send(msg) {
+  process.stdout.write(JSON.stringify(msg) + "\n");
+}
+
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  if (!line.trim()) return;
+
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (msg.id === undefined || !msg.result) return;
+
+  const index = Number(msg.id);
+  if (!Number.isInteger(index) || index < 0 || index >= cases.length) return;
+
+  const outcome = msg.result?.outcome ?? {};
+  let actual;
+  if (outcome.outcome === "cancelled") {
+    actual = "cancelled";
+  } else if (outcome.optionId === ALLOW_OPTION) {
+    actual = "allow";
+  } else if (outcome.optionId === DENY_OPTION) {
+    actual = "deny";
+  } else {
+    actual = `unknown(${outcome.optionId ?? outcome.outcome})`;
+  }
+
+  results.set(index, actual);
+
+  if (results.size === cases.length) {
+    const ordered = cases.map((c, i) => ({
+      name: c.name,
+      expect: c.expect,
+      owner: c.owner,
+      actual: results.get(i) ?? "no-response",
+    }));
+    fs.writeFileSync(resultsPath, JSON.stringify(ordered, null, 2) + "\n");
+    process.exit(0);
+  }
+});
+
+// The shim answers permission requests itself, so these never reach a client
+// and there is no handshake to wait for.
+cases.forEach((testCase, index) => {
+  const toolCall = { ...testCase.toolCall };
+  const content = toContent(testCase.toolCall.args);
+  delete toolCall.args;
+  if (content) toolCall.content = content;
+
+  send({
+    jsonrpc: "2.0",
+    id: index,
+    method: "session/request_permission",
+    params: {
+      sessionId: "security-suite",
+      toolCall,
+      options: [
+        { optionId: ALLOW_OPTION, name: "Allow", kind: "allow_once" },
+        { optionId: DENY_OPTION, name: "Reject", kind: "reject_once" },
+      ],
+    },
+  });
+});
+
+// Fail loudly rather than hanging if the shim stops answering.
+setTimeout(() => {
+  const ordered = cases.map((c, i) => ({
+    name: c.name,
+    expect: c.expect,
+    owner: c.owner,
+    actual: results.get(i) ?? "no-response",
+  }));
+  fs.writeFileSync(resultsPath, JSON.stringify(ordered, null, 2) + "\n");
+  process.stderr.write(`fake-agent: timed out with ${results.size}/${cases.length} answered\n`);
+  process.exit(1);
+}, 20000);

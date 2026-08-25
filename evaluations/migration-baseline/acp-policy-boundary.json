@@ -1,0 +1,163 @@
+{
+  "capturedAt": "2026-08-25T13:39:06.119Z",
+  "total": 26,
+  "matched": 26,
+  "results": [
+    {
+      "name": "shell: repository search",
+      "expect": "allow",
+      "owner": "sandbox + acp-policy-proxy",
+      "actual": "allow"
+    },
+    {
+      "name": "shell: read-only git",
+      "expect": "allow",
+      "owner": "sandbox + acp-policy-proxy",
+      "actual": "allow"
+    },
+    {
+      "name": "shell: git write subcommand",
+      "expect": "deny",
+      "owner": "sandbox (read-only mount)",
+      "actual": "deny"
+    },
+    {
+      "name": "shell: destructive removal",
+      "expect": "deny",
+      "owner": "sandbox (read-only mount)",
+      "actual": "deny"
+    },
+    {
+      "name": "shell: aws cli reaches production",
+      "expect": "deny",
+      "owner": "sandbox (no aws cli installed)",
+      "actual": "deny"
+    },
+    {
+      "name": "shell: chained command smuggles a denied segment",
+      "expect": "deny",
+      "owner": "acp-policy-proxy",
+      "actual": "deny"
+    },
+    {
+      "name": "shell: read production env file",
+      "expect": "deny",
+      "owner": "clean-source export (file absent)",
+      "actual": "deny"
+    },
+    {
+      "name": "read: production env file by location",
+      "expect": "deny",
+      "owner": "clean-source export (file absent)",
+      "actual": "deny"
+    },
+    {
+      "name": "mcp: allowlisted cloudwatch tool",
+      "expect": "allow",
+      "owner": "toolhive (cedar permit)",
+      "actual": "allow"
+    },
+    {
+      "name": "mcp: non-allowlisted tool on an allowed server",
+      "expect": "deny",
+      "owner": "toolhive (cedar default-deny)",
+      "actual": "deny"
+    },
+    {
+      "name": "mcp: server absent from the allowlist",
+      "expect": "deny",
+      "owner": "toolhive (not registered)",
+      "actual": "deny"
+    },
+    {
+      "name": "mcp: rapid7 read tool",
+      "expect": "allow",
+      "owner": "toolhive (cedar permit)",
+      "actual": "allow"
+    },
+    {
+      "name": "mcp: rapid7 mutating tool",
+      "expect": "deny",
+      "owner": "toolhive (cedar default-deny)",
+      "actual": "deny"
+    },
+    {
+      "name": "mcp: unrecognised non-execute tool",
+      "expect": "deny",
+      "owner": "acp-policy-proxy",
+      "actual": "deny"
+    },
+    {
+      "name": "aws: allowlisted read operation",
+      "expect": "allow",
+      "owner": "iam (allow)",
+      "actual": "allow"
+    },
+    {
+      "name": "aws: destructive operation on an allowed service",
+      "expect": "deny",
+      "owner": "iam (explicit deny)",
+      "actual": "deny"
+    },
+    {
+      "name": "aws: service outside the allowlist",
+      "expect": "deny",
+      "owner": "iam (explicit deny)",
+      "actual": "deny"
+    },
+    {
+      "name": "aws: shell metacharacter in the command",
+      "expect": "deny",
+      "owner": "iam (explicit deny)",
+      "actual": "deny"
+    },
+    {
+      "name": "sql: plain select",
+      "expect": "allow",
+      "owner": "dbhub + read-only db role",
+      "actual": "allow"
+    },
+    {
+      "name": "sql: insert",
+      "expect": "deny",
+      "owner": "db role (no INSERT grant)",
+      "actual": "deny"
+    },
+    {
+      "name": "sql: multi-statement write",
+      "expect": "deny",
+      "owner": "db role (no DDL grant)",
+      "actual": "deny"
+    },
+    {
+      "name": "sql: credential table read",
+      "expect": "deny",
+      "owner": "db role (no grant on mysql.*)",
+      "actual": "deny"
+    },
+    {
+      "name": "sql: exfiltration to file",
+      "expect": "deny",
+      "owner": "db role (no FILE privilege)",
+      "actual": "deny"
+    },
+    {
+      "name": "sql: GHSA-j656-3hf2-fvjc dash-comment bypass",
+      "expect": "deny",
+      "owner": "db role (no DDL grant)",
+      "actual": "deny"
+    },
+    {
+      "name": "sql: GHSA-mwwr-p57h-56pf side-effecting select",
+      "expect": "deny",
+      "owner": "db role (no EXECUTE grant)",
+      "actual": "deny"
+    },
+    {
+      "name": "network: outbound fetch",
+      "expect": "deny",
+      "owner": "sandbox (network policy)",
+      "actual": "deny"
+    }
+  ]
+}

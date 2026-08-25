@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-08-25T13:39:52Z",
+  "total": 8,
+  "open": 7,
+  "checks": [
+    {"check":"nkb_backend is read-only","expected":"read-only mount","state":"open","detail":"writable - a symlink to a working copy"},
+    {"check":"nkb_assessment_backend is read-only","expected":"read-only mount","state":"open","detail":"writable - a symlink to a working copy"},
+    {"check":"nkb_learning_backend is read-only","expected":"read-only mount","state":"open","detail":"writable - a symlink to a working copy"},
+    {"check":"no committed credential files reachable","expected":"absent from workspace","state":"open","detail":"4 tracked credential files reachable"},
+    {"check":"host AWS config not mounted","expected":"not present","state":"open","detail":"readable at /home/nxtwave/.aws"},
+    {"check":"host Cursor config not mounted","expected":"not present","state":"open","detail":"readable at /home/nxtwave/.cursor"},
+    {"check":"aws cli absent from runtime","expected":"not installed","state":"open","detail":"on PATH at /snap/bin/aws"},
+    {"check":"generated context writable","expected":"read-write","state":"closed","detail":"context and knowledge writable"}
+  ]
+}

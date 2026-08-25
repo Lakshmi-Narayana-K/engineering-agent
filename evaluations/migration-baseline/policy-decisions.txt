@@ -1,0 +1,8 @@
+# policy decision baseline
+# total records: 46
+
+allow    execute          1
+allow    other            24
+allow    search           2
+deny     execute          5
+deny     other            14
