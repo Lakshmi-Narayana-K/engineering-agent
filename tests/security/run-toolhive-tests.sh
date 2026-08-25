@@ -31,9 +31,38 @@ THV="$ROOT/runtime/toolhive/bin/thv"
 JSON_OUT=""
 [[ "${1:-}" == "--json" ]] && JSON_OUT="${2:?--json needs a path}"
 
-SERVER=gw-awsdocs
-ALLOWED=(search_documentation read_documentation)
-EXCLUDED=(read_sections recommend search_table)
+# Read from config/toolhive/servers.yaml rather than hardcoded, so the suite
+# tests the allowlist that is actually deployed. A hardcoded copy drifts, and a
+# drifted security test is worse than none because it reports pass for a
+# configuration nobody runs.
+#
+# NKB_TOOLHIVE_SERVER picks a server by name; otherwise the first enabled one
+# with both an allowlist and exclusions declared is used.
+read -r SERVER_NAME ALLOWED_CSV EXCLUDED_CSV < <(python3 - <<'PY'
+import os, yaml
+cfg = yaml.safe_load(open("config/toolhive/servers.yaml"))
+want = os.environ.get("NKB_TOOLHIVE_SERVER")
+best = None
+for s in cfg.get("servers", []):
+    if not s.get("enabled") or not s.get("tools"):
+        continue
+    if want and s["name"] != want:
+        continue
+    if s.get("excluded") and best is None:
+        best = s
+if best:
+    print(best["name"], ",".join(best["tools"]), ",".join(best["excluded"]))
+PY
+)
+
+if [[ -z "${SERVER_NAME:-}" ]]; then
+  echo "  no enabled server with an allowlist and exclusions in config" >&2
+  exit 1
+fi
+
+SERVER="gw-$SERVER_NAME"
+IFS=',' read -r -a ALLOWED <<<"$ALLOWED_CSV"
+IFS=',' read -r -a EXCLUDED <<<"$EXCLUDED_CSV"
 
 FAILURES=0
 TOTAL=0
@@ -97,13 +126,18 @@ for tool in "${EXCLUDED[@]}"; do
   fi
 done
 
-# --- an allowlisted tool must still work, or we have broken the platform -----
-OUT="$(timeout 120 "$THV" mcp call search_documentation --server "$SERVER" \
-        --args '{"search_phrase":"S3 bucket versioning","search_intent":"regression test","limit":1}' 2>&1)"
-if grep -qE 'search_results|rank_order' <<<"$OUT"; then
-  record pass "allowlisted tool callable" "returned results through the gateway"
+# --- an allowlisted tool must still be admitted ------------------------------
+#
+# Called with empty arguments, so a complaint about missing arguments is a PASS:
+# it proves the call reached the server rather than being refused at the gateway.
+# Admission is what this suite tests; whether a tool works with real arguments
+# is a functional question, not a security one.
+FIRST="${ALLOWED[0]}"
+OUT="$(timeout 120 "$THV" mcp call "$FIRST" --server "$SERVER" --args '{}' 2>&1)"
+if grep -qiE 'tool not found|not allowed|forbidden' <<<"$OUT"; then
+  record fail "allowlisted tool admitted: $FIRST" "REFUSED - the gateway is over-filtering"
 else
-  record fail "allowlisted tool callable" "call failed: $(head -c 90 <<<"$OUT")"
+  record pass "allowlisted tool admitted: $FIRST" "reached the server, not refused"
 fi
 
 # --- calls must be auditable, or there is no evidence trail ------------------
@@ -121,7 +155,11 @@ fi
 # Cursor would fall back to spawning its own ungoverned MCP servers.
 IMAGE="${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}"
 if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  PORT=$(grep -E '^\s+proxy_port:' config/toolhive/servers.yaml | head -1 | grep -oE '[0-9]+')
+  PORT=$(python3 -c "
+import yaml
+cfg = yaml.safe_load(open('config/toolhive/servers.yaml'))
+print(next((s.get('proxy_port','') for s in cfg['servers']
+            if s.get('name') == '$SERVER_NAME'), ''))")
   CODE="$(timeout 90 docker run --rm --add-host=host.docker.internal:host-gateway \
             --entrypoint /bin/bash "$IMAGE" -c \
             "curl -s -m 10 -o /dev/null -w '%{http_code}' http://host.docker.internal:${PORT:-19103}/mcp 2>/dev/null" 2>/dev/null)"

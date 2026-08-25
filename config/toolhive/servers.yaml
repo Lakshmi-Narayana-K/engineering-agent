@@ -70,10 +70,17 @@ servers:
   # Live and working. No credentials, so it is also the safest server to use as
   # the gateway's own regression fixture.
   - name: aws-documentation
-    enabled: true
+    enabled: false
     registry: aws-documentation
     proxy_port: 19103
     purpose: AWS service behaviour and quota lookups during investigation
+    disabled_because: >
+      Redundant once aws-api is live: the managed AWS MCP Server exposes
+      search_documentation and read_documentation itself. AWS specifically warns
+      that running overlapping servers creates duplicate tool names that
+      confuse agents and waste prompt tokens, so one source of documentation
+      tools is better than two. Kept here, disabled, because it needs no
+      credentials and is therefore a useful fixture if the AWS path breaks.
     tools:
       - search_documentation
       - read_documentation
@@ -84,21 +91,65 @@ servers:
       - recommend
       - search_table
 
-  # Phase 6. The currently configured awslabs.aws-api-mcp-server is deprecated,
-  # and the registry offers a containerised, network-isolated equivalent.
+  # Live. The managed AWS MCP Server, reached through the official local proxy.
   #
-  # The important boundary note: this server takes an operation as an argument,
-  # so ecs:DescribeServices and ecs:DeleteService are the SAME tool name. Tool
-  # filtering cannot separate them. IAM is what refuses the second one, which
-  # the baseline already proved with a policy simulation showing explicitDeny.
-  # ToolHive admits the tool; IAM authorizes the operation.
+  # Migrated off awslabs.aws-api-mcp-server, which hit end of development on
+  # 15 July 2026 and is removed on 15 July 2027. It depends on AWS CLI v1, also
+  # in maintenance mode, so it would have stopped covering new AWS APIs. The
+  # replacement is a fully managed remote server; the only local component is a
+  # thin proxy that converts SigV4 to the OAuth 2.1 the endpoint expects.
+  #
+  # Boundary note that drove the allowlist: this server takes the operation as
+  # an ARGUMENT, so ecs:DescribeServices and ecs:DeleteService are the same tool
+  # name. Tool filtering cannot separate them and must not be expected to. IAM
+  # refuses the second one, verified through this exact path - a delete-service
+  # and an iam create-user both returned AccessDenied with "explicit deny",
+  # while ecs list-clusters returned real clusters.
   - name: aws-api
-    enabled: false
-    registry: aws-api
+    enabled: true
+    protocol: "uvx://mcp-proxy-for-aws@1.6.4"
+    endpoint: https://aws-mcp.us-east-1.api.aws/mcp
+    proxy_port: 19106
+    transport: stdio
+    region: ap-south-1
     purpose: read-only AWS and CloudWatch investigation
-    blocked_on: Phase 6 - verify managed server, then wire credentials
-    tools: []
     authorization_boundary: IAM, not ToolHive
+
+    # Credentials are injected via ToolHive's environment secrets provider
+    # rather than a mounted file. Not a preference: ToolHive drives its own
+    # Docker socket and ignores DOCKER_HOST, and on this machine that daemon
+    # cannot see the repository path, so a bind mount silently produced an
+    # empty directory and the proxy exited with "profile could not be found".
+    # Secret injection avoids needing a shared filesystem at all, and keeps the
+    # credential in the one component that needs it.
+    credentials: toolhive environment secrets provider, profile nkb-agent-alpha
+
+    tools:
+      - aws___call_aws            # IAM-bounded; the operation is an argument
+      - aws___get_tasks           # poll long-running calls
+      - aws___list_regions
+      - aws___search_documentation
+      - aws___read_documentation
+
+    excluded:
+      # Executes model-generated Python with boto3 access. Read-only IAM bounds
+      # what it can do, and CloudTrail still records every underlying API call,
+      # so this is defensible to enable later - but it is a far wider surface
+      # than an investigation needs, and the script itself is opaque to our
+      # audit even when its API calls are not. Excluded until there is a
+      # concrete need. Note AWS is deprecating call_aws in its favour, so this
+      # decision has an expiry date rather than being permanent.
+      - aws___run_script
+
+      # Generates pre-signed S3 URLs for upload as well as download: a write
+      # path and a data-egress path in one tool. Our IAM policy grants no S3
+      # permissions so it would fail anyway, which makes excluding it free.
+      - aws___get_presigned_url
+
+      # Not needed, and every exposed tool costs prompt tokens for its
+      # description.
+      - aws___retrieve_skill
+      - aws___get_regional_availability
 
   # Phase 8. Currently a local checkout spawned directly by Cursor, which means
   # no container, no network isolation and no audit. Moving it behind the

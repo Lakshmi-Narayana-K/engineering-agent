@@ -1,0 +1,53 @@
+{
+  "capturedAt": "2026-08-25T15:14:28Z",
+  "phase": "6 - managed AWS MCP behind ToolHive",
+  "path": "Cursor -> ToolHive -> mcp-proxy-for-aws@1.6.4 -> aws-mcp.us-east-1.api.aws -> AWS",
+  "migratedFrom": "awslabs.aws-api-mcp-server (end of development 2026-07-15, removed 2027-07-15)",
+  "toolSurface": {
+    "advertisedByServer": 9,
+    "allowlisted": 5,
+    "excluded": 4
+  },
+  "checks": [
+    {
+      "check": "tools/list filtered to allowlist",
+      "result": "pass",
+      "detail": "5 of 9 advertised"
+    },
+    {
+      "check": "aws___run_script refused",
+      "result": "pass",
+      "detail": "tool not found"
+    },
+    {
+      "check": "aws___get_presigned_url refused",
+      "result": "pass",
+      "detail": "tool not found"
+    },
+    {
+      "check": "aws___retrieve_skill refused",
+      "result": "pass",
+      "detail": "tool not found"
+    },
+    {
+      "check": "IAM-permitted read succeeds",
+      "result": "pass",
+      "detail": "ecs list-clusters returned live clusters"
+    },
+    {
+      "check": "IAM refuses ecs:DeleteService",
+      "result": "pass",
+      "detail": "AccessDeniedException, explicit deny"
+    },
+    {
+      "check": "IAM refuses iam:CreateUser",
+      "result": "pass",
+      "detail": "AccessDenied, explicit deny"
+    }
+  ],
+  "boundaryNote": "The operation is an argument to a single tool, so tool filtering cannot separate reads from writes. IAM is the authorization boundary and was verified through this path, not only via the CLI.",
+  "knownGaps": [
+    "No OIDC: ToolHive assigns a synthetic local identity, so Cedar per-user authorization is not yet meaningful.",
+    "Credentials are long-lived keys for the scoped read-only role; deployment target is ECS task role plus STS AssumeRole."
+  ]
+}

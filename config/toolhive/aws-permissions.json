@@ -1,0 +1,41 @@
+{
+  "$comment": [
+    "Network policy for the AWS MCP proxy container, enforced by ToolHive's",
+    "egress proxy rather than by trusting the process to behave.",
+    "",
+    "This container is the only component holding AWS credentials, which makes",
+    "its egress worth constraining: if it can only reach the AWS MCP endpoint",
+    "and STS, then a compromised or misbehaving proxy has nowhere to send them.",
+    "Cursor never receives these credentials at all, so this is defence for the",
+    "one place they do exist.",
+    "",
+    "Not the authorization boundary. What the agent may DO in AWS is decided by",
+    "the IAM policy on nkb-agent-readonly-alpha, and the baseline proved that",
+    "holds independently: a policy simulation returned explicitDeny for",
+    "sqs:DeleteQueue. This file only limits where packets may go."
+  ],
+  "read": [],
+  "$comment_read": [
+    "Deliberately empty, with the credentials mount passed as --volume instead.",
+    "",
+    "Entries here are HOST paths, so \"/aws\" made ToolHive try to mount a",
+    "non-existent host directory and then skip the real --volume as a duplicate",
+    "target - the credentials silently resolved to an empty directory. Putting",
+    "the correct host path here instead would hardcode one developer's absolute",
+    "path into committed config, so the mount stays on the command line where it",
+    "can be derived at runtime."
+  ],
+  "network": {
+    "outbound": {
+      "insecure_allow_all": false,
+      "allow_host": [
+        "aws-mcp.us-east-1.api.aws",
+        "sts.amazonaws.com",
+        "sts.ap-south-1.amazonaws.com",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ],
+      "allow_port": [443]
+    }
+  }
+}
