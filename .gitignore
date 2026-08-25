@@ -1,0 +1,38 @@
+# OpenHands Agent Server runs `git init` on the conversation workspace root, so
+# this directory is a Git repo whether or not anyone intended it to be. These
+# entries make sure nothing here can accidentally stage product repository
+# contents or local runtime state.
+
+# Symlinks to the product repositories. Never track these - they point at real
+# checkouts that belong to other repos.
+/repos/
+
+# Local runtime state: pids, logs, captured baselines, shim traces.
+/runtime/logs/
+/runtime/*.pid
+/runtime/.smoke-ok
+
+# AWS credential material for the agent's scoped identity. Kept inside the POC
+# rather than ~/.aws so the workspace stays self-contained and the developer's
+# own AWS profiles are never reachable from the agent's process tree.
+/runtime/aws/
+
+# Cursor API key. runtime/cursor/ is otherwise tracked because the shim lives
+# there, so this needs its own entry rather than relying on a directory rule.
+/runtime/cursor/api-key
+
+# Isolated $HOME for `agent acp`. Holds Cursor's session state, the MCP approval
+# cache, and the materialised mcp.json with placeholders resolved to real
+# secrets; the portable declared config under .cursor/ is committed separately.
+/runtime/cursor-home/
+
+# Rapid7 InsightIDR API key, referenced from .cursor/mcp.json as
+# ${file:runtime/rapid7/api-key} so the declaration itself stays committable.
+/runtime/rapid7/
+
+# Symlinks to MCP server checkouts that live outside this workspace.
+/runtime/mcp/r7-insightidr
+
+# Agent Canvas / Agent Server scratch state, if it lands here.
+/workspace/
+/.openhands/

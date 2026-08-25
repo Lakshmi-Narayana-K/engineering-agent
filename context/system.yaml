@@ -1,0 +1,240 @@
+# Cross-repository system model for NKB.
+#
+# Generated from static source analysis on 2026-08-25. Evidence paths are relative
+# to each repository root. Confidence is stated per claim; UNKNOWN is used rather
+# than inference.
+#
+# THE ONE THING TO READ FIRST: these are not three network-separated services.
+# nkb_backend is a composition root; the other two are pip packages installed into
+# it. Every cross-repo call is an in-process Python import.
+
+version: 1
+generated_at: "2026-08-25"
+method: static source reading only; no AWS, database, or network access
+
+system:
+  name: NKB
+  vendor_context: NxtWave / CCBP / NIAT learning platform
+
+repositories:
+  - nkb_backend
+  - nkb_assessment_backend
+  - nkb_learning_backend
+
+topology:
+  shape: single composed Django deployment plus two library packages
+  confidence: HIGH
+  composition_root: nkb_backend
+  evidence:
+    - "nkb_backend/zappa_settings.json:160-163 - sole owner of web_socket_handler, event_bridge_handler, sqs_handler, agentcore_gateway_handler"
+    - "nkb_backend/pyproject.toml:39-40 - depends on nkb-learning-backend 5.40.11 and nkb_assessment_backend 5.31.4"
+    - "nkb_learning_backend/env_beta.sh:1,11,51 - sets DJANGO_SETTINGS_MODULE=nkb_backend.settings.ccbp_beta and function=nkb-backend-ccbp-beta"
+    - "nkb_assessment_backend/pytest.ini:5 - norecursedirs excludes nkb_learning_backend/settings, implying co-checkout"
+  api_surface: >-
+    nkb_backend/nkb_backend/urls.py:37-44 builds /api/<app_name>/ routes from
+    INSTALLED_APPS, so its public HTTP surface is the union of all three repos' routes.
+  caveat: >-
+    Both library repos also ship their own zappa_settings.json for a legacy standalone
+    deployment. Whether those are still live is UNKNOWN.
+
+domains:
+  - name: assessment_and_evaluation
+    owner_repo: nkb_assessment_backend
+    covers: [questions, exams, assessments, coding practice, contests, quizzes, certificates, plagiarism, leaderboards]
+    evidence: nkb_assessment_backend/nkb_assessment_backend/settings/base_swagger_utils.py:25-45
+  - name: learning_content_and_identity
+    owner_repo: nkb_learning_backend
+    covers: [content tree, courses, cohorts, learning paths, learner progress, auth, onboarding, discussions, IDE tooling, NIAT]
+    evidence: nkb_learning_backend/nkb_learning_backend/settings/base_swagger_utils.py:24-55
+  - name: composition_ops_and_integrations
+    owner_repo: nkb_backend
+    covers: [settings, routing, deployment entry points, AI learning coach, gamification wrapper, content MCP, bulk content loading, webhooks, ops dashboards]
+    evidence: nkb_backend/nkb_backend/settings/base_swagger_utils.py:24-31
+
+# An edge is CONFIRMED only when source or config performing it was read.
+confirmed_dependencies:
+  - from: nkb_backend
+    to: nkb_assessment_backend
+    mechanism: in-process Python import of an installed pip package
+    caller_evidence: "nkb_backend/zappa_command_receiver.py:21 - from nkb_exam.interfaces.service_interface import ServiceInterface"
+    receiver_evidence: "nkb_assessment_backend/nkb_exam/interfaces/service_interface.py:197-208"
+    confidence: HIGH
+
+  - from: nkb_backend
+    to: nkb_learning_backend
+    mechanism: in-process Python import of an installed pip package
+    caller_evidence: "nkb_backend/zappa_command_receiver.py:287 - from nkb_resources.interfaces.service_interface import ServiceInterface"
+    receiver_evidence: "nkb_learning_backend/nkb_resources/interfaces/service_interface.py"
+    confidence: HIGH
+
+  - from: nkb_learning_backend
+    to: nkb_assessment_backend
+    mechanism: in-process import; declared dependency
+    caller_evidence: "nkb_learning_backend/nkb_resources/utils/get_content_data_util.py:42-48; nkb_niat/adapters/assessment_service_adapter.py:15"
+    receiver_evidence: "nkb_assessment_backend/nkb_exam/interfaces/service_interface.py:197-208"
+    declared_in: "nkb_learning_backend/pyproject.toml:63 - nkb_assessment_backend >=5.0.0,<6.0.0"
+    notes: "Densest edge: roughly 20 adapter classes in learning wrap assessment ServiceInterfaces."
+    confidence: HIGH
+
+  - from: nkb_assessment_backend
+    to: nkb_learning_backend
+    mechanism: in-process import, lazy, UNDECLARED
+    caller_evidence: "nkb_assessment_backend/nkb_coding_practice/adapters/coding_core_service_adapter.py:75; nkb_exam/adapters/learning_resource_service_adapter.py:19; nkb_question/adapters/learning_path_service/learning_path_service_adapter.py:7"
+    receiver_evidence: "nkb_learning_backend/nkb_coding_core/, nkb_learning_resource/, nkb_learning_path/"
+    notes: >-
+      Not declared in nkb_assessment_backend/pyproject.toml. Imports are deferred inside
+      @property and method bodies, so the package imports cleanly standalone but these
+      paths only resolve when co-installed. This makes the runtime graph CYCLIC while
+      the build-time graph stays acyclic.
+    confidence: HIGH
+
+  - from: [nkb_assessment_backend, nkb_learning_backend]
+    to: nkb_backend
+    mechanism: shared Django settings namespace (configuration ownership inversion)
+    caller_evidence: "nkb_assessment_backend/nkb_question/adapters/compile_box_service_adapter_v3.py:162 reads settings.SQS_COMPILER_BOX_QUEUE_BASE_URL; nkb_learning_backend/nkb_auth_v2/sub_handlers/poster_generated_sub_handler.py:13 reads settings.IB_EVENTS_POSTER_GENERATED_SUBSCRIPTION"
+    receiver_evidence: "nkb_backend/nkb_backend/settings/base.py:627-628; nkb_backend/nkb_backend/settings/base_server.py:121 - the only definitions"
+    notes: "Neither setting exists in the library repos' own settings. Those code paths cannot run correctly outside the composed deployment."
+    confidence: HIGH
+
+  - from: nkb_assessment_backend
+    to: nkb_backend
+    mechanism: AWS SQS shared queue (the one genuinely asynchronous cross-repo edge)
+    caller_evidence: "nkb_assessment_backend/nkb_question/adapters/compile_box_service_adapter_v3.py:91-94 publishes; nkb_question/utils/send_sqs_message_request.py:10-13"
+    receiver_evidence: "nkb_backend/sqs_lambda_handler.py:19-26 consumes and dispatches back into assessment receivers; wired at nkb_backend/zappa_settings.json:162"
+    queues:
+      request: "CompilerBox-code-evaluation-request-{production,dev}-Queue-<lang> (nkb_backend/nkb_backend/settings/ccbp_prod.py:449)"
+      response: "CompilerBox-code-evaluation-response-{production,dev}-Queue (nkb_backend/nkb_backend/settings/ccbp_prod.py:650)"
+    notes: "An external CompilerBox worker sits in the middle. Queue URLs and message types are defined only in nkb_backend."
+    confidence: HIGH
+
+possible_dependencies:
+  - from: nkb_assessment_backend
+    to: nkb_learning_backend
+    mechanism: ib_events / EventBridge pub-sub around certificate poster generation
+    evidence: "nkb_assessment_backend/nkb_certificate/adapters/ib_events_service_adapter.py:47-51 emits GENERATE_CERTIFICATE; three repos subscribe to POSTER_GENERATED"
+    missing_to_confirm: "The producer of POSTER_GENERATED is an external rendering service, not in any of these repos. They are co-subscribers to a third party, not producer/consumer of each other."
+    confidence: MEDIUM
+
+  - from: all
+    to: all
+    mechanism: shared relational database
+    evidence: "All three read identical RDS_* env var names; nkb_backend/nkb_backend/db_router.py:8-25 has no per-app routing and allow_relation always returns True"
+    missing_to_confirm: "Env values are deploy-time secrets. In the composed deployment a single shared DB is certain; whether the legacy standalone deployments point at the same RDS instance is UNKNOWN."
+    confidence: MEDIUM
+
+# Things that look like cross-service edges and are NOT. Read this before
+# concluding a network hop exists.
+rejected_dependencies:
+  - claim: "The get_service_adapter / interfaces/service_interface pattern is cross-service RPC"
+    why_rejected: >-
+      It is in-process. ServiceInterface methods are plain @staticmethods that directly
+      instantiate the target app's StorageImplementation and interactor in the same
+      Python process. No serialization, no transport, no base URL, no client. The
+      adapter layer preserves clean-architecture boundaries between Django apps; it is
+      architectural, not topological. These calls ARE cross-repository, but they are
+      not cross-process.
+    evidence: "nkb_assessment_backend/nkb_exam/interfaces/service_interface.py:197-208"
+
+  - claim: "TOPIN_BASE_URL is an HTTP edge to nkb_assessment_backend"
+    why_rejected: >-
+      TOPIN is an unrelated external assessment product (topin.tech). Its path prefix
+      /api/nw_integrations has zero matches anywhere in nkb_assessment_backend, whose
+      own hostnames are nkb-assessment-backend-*.apigateway.in.
+    evidence: "nkb_backend/nkb_backend/settings/ccbp_prod.py:679,565; consumed only at nkb_learning_backend/nkb_placement_support/adapters/topin_adapter.py:53"
+
+  - claim: "There is a REST/HTTP edge between any two of the three repos"
+    why_rejected: >-
+      No repo constructs a URL targeting another. Every /api/nkb_*/ literal is the
+      repo's own basePath or its own view tests. Every requests.* call site targets an
+      external system (Azure OpenAI, Google Speech, BigQuery, CompilerBox, Codeforces).
+    evidence: "Searched /api/nkb_[a-z_]+/ across all three repos - self-references only"
+
+  - claim: "nkb_leaderboard links assessment to learning"
+    why_rejected: "nkb_leaderboard is owned solely by nkb_assessment_backend. ib_leaderboard, nw_leaderboard and nw_activities are separate external pip packages."
+    evidence: "nkb_assessment_backend/nkb_assessment_backend/settings/base_swagger_utils.py:27,22"
+
+  - claim: "IB_EVENTS_* subscriptions are events exchanged between these three repos"
+    why_rejected: "Subscription constants are named after external producers (payments/NACH, ib_user_accounts, TOPIN, job readiness, poster generation). No subscription name in one repo matches an emit_event event_type in a sibling."
+    evidence: "nkb_backend/nkb_backend/settings/base_server.py:109-158"
+
+  - claim: "nkb_resources_extensions/sub_handlers/mark_unit_as_completed_handler.py consumes assessment results"
+    why_rejected: "It registers on IB_EVENTS_UPDATE_USER_AI_INTERVIEW_STATUS_SUBSCRIPTION - an AI-interview subscription, not an assessment one."
+    evidence: "nkb_learning_backend/nkb_resources_extensions/sub_handlers/mark_unit_as_completed_handler.py:14"
+
+shared_concepts:
+  - concept: user_id
+    repos: [nkb_backend, nkb_assessment_backend, nkb_learning_backend]
+    evidence: "AUTH_USER_MODEL = 'ib_users.UserAccount' set in nkb_backend/nkb_backend/settings/base_swagger_utils.py:161; ib_users is an external shared package"
+    note: "Shared vocabulary, not by itself a dependency."
+  - concept: exam_id / assessment_id / question_set_id
+    repos: [nkb_assessment_backend, nkb_learning_backend]
+    evidence: "nkb_learning_backend/nkb_resources/utils/get_content_data_util.py:41-84 passes a learning unit_id straight through as an assessment exam_id - one identifier space, no translation layer"
+  - concept: evaluation_id / request_id
+    repos: [nkb_assessment_backend, nkb_backend]
+    evidence: "nkb_assessment_backend/nkb_question/adapters/compile_box_service_adapter_v3.py:76 correlates with nkb_backend/sqs_lambda_handler.py:16-22"
+
+cross_repo_flows:
+  - name: coding_question_evaluation
+    confidence: HIGH
+    summary: "assessment publishes to SQS -> external CompilerBox evaluates -> nkb_backend Lambda consumes response -> dispatches back into assessment receivers"
+  - name: course_unit_content_assembly
+    confidence: HIGH
+    summary: "learning nkb_resources resolves a course unit, branches on unit_type, calls assessment interactors in-process"
+  - name: async_command_dispatch
+    confidence: HIGH
+    summary: "nkb_backend zappa_command_receiver invokes assessment and learning ServiceInterfaces in-process"
+  - name: bulk_content_load_from_spreadsheet
+    confidence: HIGH
+    summary: "nkb_backend nkb_load_data reads Google Sheets and writes into assessment and learning models in-process"
+  - name: certificate_poster_generation
+    confidence: MEDIUM
+    summary: "assessment emits GENERATE_CERTIFICATE; an external renderer emits POSTER_GENERATED; all three repos subscribe in parallel"
+
+aws_services_referenced:
+  - {service: S3, repos: [all]}
+  - {service: SQS, repos: [nkb_backend, nkb_assessment_backend], note: "nkb_learning_backend has NO SQS producer or consumer"}
+  - {service: SNS, repos: [], note: "Not used by any of the three"}
+  - {service: Lambda, repos: [all]}
+  - {service: Step Functions, repos: [all]}
+  - {service: CloudWatch, repos: [all]}
+  - {service: DynamoDB, repos: [nkb_backend, nkb_assessment_backend, nkb_learning_backend]}
+  - {service: EventBridge (via ib_events), repos: [all]}
+  - {service: RDS PostgreSQL/MySQL, repos: [all]}
+  - {service: SSM Parameter Store, repos: [nkb_backend, nkb_learning_backend]}
+  - {service: API Gateway (Zappa), repos: [all]}
+  - {service: Bedrock, repos: [nkb_backend], note: "AgentCore Gateway + Converse streaming, nkb_coach and nkb_content_mcp"}
+  - {service: Rekognition, repos: [nkb_backend, nkb_learning_backend]}
+  - {service: SES, repos: [], note: "SMTP-over-SES config only; no boto3 ses client anywhere"}
+
+external_systems:
+  - CompilerBox (code evaluation)
+  - TOPIN assessment platform
+  - Woolf (academic accreditation partner)
+  - Azure OpenAI / OpenAI / Azure Speech / Google Speech
+  - Google BigQuery / Sheets / Calendar
+  - niat_core_backend
+  - ib_user_accounts backend
+  - CCBP payments backend, CCBP IDE v2
+  - Pinecone, Algolia, Elasticsearch
+  - Codeforces, Freshdesk, Freshsales, Enterpret, Calendly, Typeform, Salesforce, n8n, Mattermost, Firebase, Segment
+
+structural_risks:
+  - risk: app name collision on nkb_coach
+    detail: "A top-level nkb_coach app exists in BOTH nkb_backend and nkb_learning_backend. nkb_backend registers its own; learning's APPS list omits it. Which wins on sys.path in the composed deployment is not determinable from source."
+    evidence: "nkb_backend/nkb_backend/settings/base_swagger_utils.py:30; nkb_learning_backend/nkb_learning_backend/settings/base_swagger_utils.py:24-55"
+  - risk: version pins disagree between files
+    detail: "nkb_backend/pyproject.toml:39-40 pins nkb-learning-backend 5.40.11 / nkb_assessment_backend 5.31.4; nkb_backend/requirements_project.txt:44-45 pins 3.0.1 / 3.0.6. Same split exists in learning."
+  - risk: undeclared cyclic dependency
+    detail: "nkb_assessment_backend imports nkb_learning_backend apps without declaring the dependency. Failures surface at call time, not install time."
+  - risk: committed credentials
+    detail: "nkb_learning_backend/env_beta.sh is committed and contains live-looking credential VALUES (AWS keys, RDS password, Django SECRET_KEY, OpenAI token). .gitignore has an env_* rule, so it appears to predate it or was force-added. Reported as a finding; values were never read out, copied, or validated."
+
+unknowns:
+  - "Which installed distribution provides each of the ~35 third-party swagger apps not named in any pyproject.toml. Verifying requires reading .venv/site-packages, which was out of scope."
+  - "Whether the legacy standalone deployments of the two library repos are still live, and whether they share the composed deployment's RDS instance."
+  - "The transport behind ib_events @register subscriptions (EventBridge vs SNS+SQS vs in-process) - implemented inside the third-party ib_events package."
+  - "The producer of the POSTER_GENERATED event; it is outside all three repos."
+  - "How 80 of the 83 nkb_backend Lambda cron schedules are provisioned. zappa_settings.json has no events block and add_cron_job_events.py covers only 3 for one hardcoded stage."
+  - "Whether production runs PostgreSQL or MySQL. RDS_DB_ENGINE is env-supplied and both drivers plus both CI harness scripts exist."
+  - "Authoritative Python/Django runtime. Dockerfiles and zappa configs say Python 3.7; pyproject.toml files say ^3.12 with Django 5.1."
+  - "Receivers for several assessment Django signals (end_exam_sender, the two Woolf signals) were not found in any of the three repos."

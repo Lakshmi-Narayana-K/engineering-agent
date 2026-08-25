@@ -1,0 +1,131 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchLogsRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:Describe*",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:GetLogGroupFields",
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchMetricsAndAlarmsRead",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:Describe*",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcsRead",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:ListClusters",
+        "ecs:ListServices",
+        "ecs:ListTasks",
+        "ecs:ListTaskDefinitions",
+        "ecs:DescribeClusters",
+        "ecs:DescribeServices",
+        "ecs:DescribeTasks",
+        "ecs:DescribeTaskDefinition"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaRead",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListFunctions",
+        "lambda:ListVersionsByFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:GetPolicy"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SqsRead",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:ListQueues",
+        "sqs:GetQueueUrl",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StepFunctionsRead",
+      "Effect": "Allow",
+      "Action": [
+        "states:ListStateMachines",
+        "states:ListExecutions",
+        "states:DescribeStateMachine",
+        "states:DescribeExecution",
+        "states:GetExecutionHistory"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RdsMetadataReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusterEndpoints"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyEverythingNotListedAbove",
+      "Effect": "Deny",
+      "NotAction": [
+        "logs:Describe*",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:GetLogGroupFields",
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "cloudwatch:Describe*",
+        "cloudwatch:ListMetrics",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "ecs:ListClusters",
+        "ecs:ListServices",
+        "ecs:ListTasks",
+        "ecs:ListTaskDefinitions",
+        "ecs:DescribeClusters",
+        "ecs:DescribeServices",
+        "ecs:DescribeTasks",
+        "ecs:DescribeTaskDefinition",
+        "lambda:ListFunctions",
+        "lambda:ListVersionsByFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:GetPolicy",
+        "sqs:ListQueues",
+        "sqs:GetQueueUrl",
+        "sqs:GetQueueAttributes",
+        "states:ListStateMachines",
+        "states:ListExecutions",
+        "states:DescribeStateMachine",
+        "states:DescribeExecution",
+        "states:GetExecutionHistory",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusterEndpoints"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

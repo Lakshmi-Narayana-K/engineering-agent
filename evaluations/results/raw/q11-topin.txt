@@ -1,0 +1,53 @@
+agent_kind       : acp
+acp_server       : custom
+acp_command      : ['node', '/home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc/runtime/cursor/cursor-acp-shim.mjs', 'acp']
+acp_session_mode : ask
+
+workspace        : /home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc
+prompt           : What is TOPIN_BASE_URL and which repository uses it? Is it related to nkb_assessment_backend? Cite evidence.
+
+conversation     : 18874025-9773-44a8-bb00-d2f30ed83de6
+  [   0.0s] status -> idle
+  [   7.7s] status -> running
+  [  53.8s] status -> finished
+
+events           : 51
+--- agent output ---
+I'll search this repo and related knowledge for `TOPIN_BASE_URL` and whether it ties to `nkb_assessment_backend`.Knowledge docs already flag TOPIN as external. I'll verify that in source: settings, the adapter, and whether assessment_backend mentions it.**`TOPIN_BASE_URL` is the HTTP base URL for TOPIN (topin.tech), an external assessment vendor.** It is **not** an edge into `nkb_assessment_backend`. The only code that *calls* it lives in **`nkb_learning_backend`**.
+
+## What it is
+
+A Django setting used as the prefix for outbound HTTPS POSTs (API key from SSM). The adapter concatenates it with TOPIN paths:
+
+- `/invite/assess/candidates/v1/`
+- `/assessment/candidates/attempt/stats/get/v1/`
+
+```51:80:/home/nxtwave/Desktop/CodeBase-HUB/nkb_learning_backend/nkb_placement_support/adapters/topin_adapter.py
+    @property
+    def _base_url(self) -> str:
+        return settings.TOPIN_BASE_URL
+    ...
+        url = self._base_url + INVITE_PATH
+    ...
+        url = self._base_url + ATTEMPT_STATS_PATH
+```
+
+Prod value (set in the **composed** app, `nkb_backend`):
+
+`https://nxtwave-assessments-backend-topin-prod-apis.ccbp.in/api/nw_integrations`
+
+That hostname is the trap: “assessments-backend-topin” sounds like `nkb_assessment_backend`. It is a **separate** TOPIN integration host. Learner-facing TOPIN is a different setting, `TOPIN_ASSESSMENT_URL` → `https://assessment.topin.tech/...`.
+
+## Which repo uses it
+
+| Role | Repo | Evidence |
+|------|------|----------|
+| **Only consumer** | `nkb_learning_backend` | `nkb_placement_support/adapters/topin_adapter.py` — sole `settings.TOPIN_BASE_URL` read |
+| Declared (env default) | `nkb_learning_backend` | `nkb_learning_backend/settings/base.py:492` — `os.environ.get("TOPIN_BASE_URL", "")` |
+| Concrete URLs (beta/prod) | `nkb_backend` | `nkb_backend/settings/ccbp_prod.py:679`, `ccbp_beta.py:677` — **defined, never referenced** in that repo |
+| **Unused** | `nkb_assessment_backend` | **zero** matches for `TOPIN_BASE_URL` |
+
+`nkb_backend`
+--- end ---
+
+FAIL: expected substring 'CURSOR_ACP_CONNECTED' not found in agent output

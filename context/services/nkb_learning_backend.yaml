@@ -1,0 +1,125 @@
+name: nkb_learning_backend
+repository:
+  local_path: /home/nxtwave/Desktop/CodeBase-HUB/nkb_learning_backend
+  branch: development
+  head: abb3d703
+  dirty_at_baseline: true
+
+role: library of Django apps installed into nkb_backend; also carries a legacy standalone Zappa deployment
+purpose: >-
+  Owns the learning content tree (program -> course -> topic -> unit), per-user
+  unlock and completion state, learner scheduling and growth cycles, authentication
+  and onboarding, discussions, coding/IDE tooling, live cohort sessions, and the
+  NIAT institute experience. 30 registered Django apps.
+
+technology:
+  languages: [Python]
+  frameworks:
+    - Django 5.1 (pyproject.toml)
+    - djangorestframework, oauth2_provider, rest_framework_api_key
+    - django-swagger-utils / dsu (two generations coexist in the codebase)
+    - Zappa
+    - PynamoDB / ib_pynamodb
+    - modeltranslation, simple_history, elasticsearch-dsl, algoliasearch
+
+entry_points:
+  - {path: manage.py, kind: cli, note: "bare execute_from_command_line; DJANGO_SETTINGS_MODULE must be exported first"}
+  - {path: nkb_learning_backend/wsgi.py, kind: wsgi}
+  - {path: nkb_learning_backend/urls.py, kind: routing, note: "iterates SWAGGER_UTILS['APPS']; ImportError per app is silently swallowed"}
+  - {path: zappa_settings.json, kind: deployment, note: "legacy standalone path"}
+  - {path: env_beta.sh, kind: environment, note: "sets DJANGO_SETTINGS_MODULE=nkb_backend.settings.ccbp_beta - proof that nkb_backend is the real host"}
+  - {path: asgi.py, kind: absent}
+
+major_modules:
+  - {name: nkb_resources, purpose: "Content tree, unlock/dependency rules, course versions, and the recursive completion rollup. Owns learner progress."}
+  - {name: nkb_auth_v2, purpose: "Current auth: OAuth authorization-code login, device restriction, enroll plans, onboarding, face auth. Largest app in the repo."}
+  - {name: nkb_auth, purpose: "Legacy password/OTP login. NOT dead - still owns UserRole, feature flags, Mattermost linkage, and user-extra-details storage that nkb_auth_v2 imports."}
+  - {name: nkb_learning_path, purpose: "Growth cycles, schedules, calendars, pause/resume, IDP overview"}
+  - {name: nkb_discussions, purpose: "Discussion threads with Algolia/Elasticsearch indexing"}
+  - {name: nkb_placement_support, purpose: "Job sections, assessment slots/bookings, TOPIN attempt results, resume generation"}
+  - {name: nkb_niat, purpose: "NIAT schedule/curriculum/institute, live meets, assessment-attempt practice generation"}
+  - {name: nkb_resources_extensions, purpose: "Event glue around nkb_resources - ib_events emission, Woolf sync"}
+  - {name: nkb_coding_core, purpose: "Code repos/snippets, S3 publish, evaluation results"}
+  app_count: 30
+  evidence: nkb_learning_backend/settings/base_swagger_utils.py:24-55
+
+learner_progress:
+  owner_app: nkb_resources
+  classes: [DependentResourceAvailability, DependentResourceAvailabilityV2]
+  models:
+    - {name: UserResource, note: "completion_status, completion_percentage, unique on (user_id, resource)"}
+    - {name: UserLinkedToUnitCompletionDetails}
+    - {name: UserResourceProgressLog, note: "DynamoDB via PynamoDB, with LSI and ResourceCompletionGSI"}
+  algorithm: >-
+    Bottom-up recursive rollup. Leaf completion is written directly; every ancestor
+    is recomputed from its children. CompletionStatus is derived, never stored
+    independently - 'completed' iff percentage equals MAX_COMPLETION_PERCENTAGE.
+  version_split: >-
+    V1 carries a bare float per resource. V2 carries a dict of
+    {completion_percentage, last_progress_datetime}. The ib_events handler uses V2;
+    the cross-app ServiceInterface uses V1. Same operation, different class.
+  known_defect: >-
+    V2 does not override _update_completion_percentage. It inherits V1's version,
+    which builds {resource_id: float} then calls the polymorphically-resolved V2
+    recursion, which expects dicts. See knowledge/documentation-gaps.md.
+
+interfaces:
+  inbound:
+    - {kind: http, detail: "/api/<app_name>/ per app"}
+    - {kind: event_subscription, detail: "23 ib_events @register handlers, including TOPIN assessment attempt start/end"}
+    - {kind: in_process_service_interface, detail: "interfaces/service_interface.py per app"}
+    - {kind: django_signal, detail: "nw_connect meet_session_ended_signal, with a local mock fallback"}
+  outbound:
+    - {target: nkb_assessment_backend, mechanism: "in-process import; DECLARED at pyproject.toml:63", evidence: "nkb_niat/adapters/assessment_service_adapter.py:15"}
+    - {target: nkb_backend, mechanism: "in-process import of nkb_core.app_interfaces and nkb_load_data.utils.ecs_utils", evidence: "nkb_learning_path/adapters/nkb_core_service/nkb_core_service.py:20; nkb_projects/utils/evaluation_submission_with_ai.py:45"}
+    - {target: TOPIN, mechanism: "HTTPS POST with X-API-KEY from SSM", evidence: "nkb_placement_support/adapters/topin_adapter.py:18-92"}
+    - {target: Woolf, mechanism: HTTP submission/grade sync}
+    - {target: ib_events bus, mechanism: emit_event}
+
+data:
+  databases_referenced:
+    - "Shared relational default DB via RDS_* env vars"
+    - "DynamoDB for UserResourceProgressLog only"
+    - "Elasticsearch (only when ELASTICSEARCH_ENDPOINT is set), Pinecone, Firebase RTDB"
+  caches_referenced:
+    - "UNKNOWN - no CACHES setting exists in any settings module here, despite one cacheops call site. Cache config lives in the host project."
+
+async:
+  queues: []
+  note: "No SQS producer or consumer anywhere in this repo."
+  events: ["23 ib_events subscriptions", "emissions: user_resource_completed, lp_user_resource_unlocked", "Django signals for resource completion/unlock"]
+  workers:
+    - "Zappa async Lambda tasks across 9 modules"
+    - "AWS Step Functions scheduler (three state-machine ARNs)"
+    - "ECS Fargate for AI project-submission evaluation, via nkb_load_data from nkb_backend"
+    - "NO Celery. NO custom Django management commands."
+
+aws_references:
+  s3: true
+  sqs: false
+  sns: false
+  lambda: true
+  step_functions: true
+  cloudwatch: true
+  dynamodb: true
+  rekognition: true
+  ssm: true
+
+tests:
+  frameworks: [pytest, pytest-django, factory-boy, freezegun, snapshottest]
+  commands: ["python manage.py build -at", "python -m pytest"]
+  note: "Tests are colocated: per-endpoint under <app>/views/<op>/tests/ and layer tests under <app>/tests/."
+
+documentation:
+  project_docs: present
+  coverage: "13 of 30 apps. The largest apps - nkb_auth_v2, nkb_discussions, nkb_placement_support, nkb_auth - are undocumented."
+  additional: [nkb_cohort/docs/, nkb_learning_path/docs/]
+
+known_gaps:
+  - "COMPLETION_PERCENTAGE_ANALYSIS.md claims a fix that is not present in the code."
+  - "project_docs/nkb_resources.md claims a Redis caching layer that does not exist in this repo."
+  - "project_docs/nkb_niat.md omits the entire assessment-attempt practice subsystem."
+  - "README.md describes standalone operation only and never mentions the package-into-nkb_backend model."
+  - "requirements_project.txt contradicts pyproject.toml on nearly every pin."
+  - "nkb_coach/ and nkb_learning_sheet/ are directory trees with zero .py files and no app registration."
+  - "SECURITY: env_beta.sh is committed and contains live-looking credential values."

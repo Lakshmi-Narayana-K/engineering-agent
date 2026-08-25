@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowNamedDeveloperToAssumeForAlphaTesting",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<ALPHA_ACCOUNT_ID>:user/<YOUR_IAM_USER>"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

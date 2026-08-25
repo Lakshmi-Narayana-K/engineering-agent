@@ -1,0 +1,24 @@
+ M nkb_bot/views/get_query_resolution_bot_reply/tests/__init__.py
+ M nkb_coding_core/views/get_code_evaluation_results/request_response_mocks.py
+ M nkb_cohort/views/get_cohort_courses/tests/__init__.py
+ M nkb_collective_learning/models/models.py
+ M nkb_virtual_labs/views/get_content_visualizer_info/request_response_mocks.py
+?? nkb_learning_backend/COMPLETION_PERCENTAGE_ANALYSIS.md
+?? nkb_learning_resource/scripts/
+?? nkb_resources_extensions/views/create_todo/
+?? nkb_resources_extensions/views/delete_todo/
+?? nkb_resources_extensions/views/get_todo/
+?? nkb_resources_extensions/views/get_todos/
+?? nkb_resources_extensions/views/update_todo/
+?? nkb_tagging/views/create_todo/
+?? nkb_tagging/views/delete_todo/
+?? nkb_tagging/views/get_todo/
+?? nkb_tagging/views/get_todos/
+?? nkb_tagging/views/update_todo/
+?? nkb_vocabulary_core/views/create_todo/
+?? nkb_vocabulary_core/views/delete_todo/
+?? nkb_vocabulary_core/views/get_todo/
+?? nkb_vocabulary_core/views/get_todos/
+?? nkb_vocabulary_core/views/update_todo/
+?? project_docs/sample_output.md
+?? project_docs/template.md

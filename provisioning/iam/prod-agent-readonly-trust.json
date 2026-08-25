@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowOnlyTheAgentRuntimeRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<AGENT_ACCOUNT_ID>:role/nkb-agent-runtime-role"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalOrgID": "<NXTWAVE_TECH_ORG_ID>"
+        }
+      }
+    }
+  ]
+}

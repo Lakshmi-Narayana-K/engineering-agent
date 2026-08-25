@@ -1,0 +1,92 @@
+name: nkb_assessment_backend
+repository:
+  local_path: /home/nxtwave/Desktop/CodeBase-HUB/nkb_assessment_backend
+  branch: feat-practice-gamification-jatin
+  head: abab92d6
+  dirty_at_baseline: true
+
+role: library of Django apps installed into nkb_backend; also carries a legacy standalone Zappa deployment
+purpose: >-
+  Owns assessment and evaluation for the platform: question authoring and banks,
+  exams, assessments and attempts, coding practice and contests, quizzes,
+  certificates, plagiarism detection, and an assessment-scoped leaderboard.
+
+technology:
+  languages: [Python]
+  frameworks:
+    - Django 5.1 (pyproject.toml)
+    - djangorestframework, oauth2_provider
+    - django-swagger-utils / dsu
+    - Zappa
+    - PynamoDB / ib_pynamodb
+    - boto3
+
+entry_points:
+  - {path: manage.py, kind: cli}
+  - {path: nkb_assessment_backend/wsgi.py, kind: wsgi}
+  - {path: nkb_assessment_backend/urls.py, kind: routing}
+  - {path: zappa_settings.json, kind: deployment, note: "alpha/beta/gamma/prod stages; legacy standalone path"}
+  - {path: pyproject.toml, kind: packaging, note: "publishes each app as a package to a private CodeArtifact index"}
+
+major_modules:
+  - {name: nkb_question, purpose: "Question authoring, banks, and code evaluation dispatch to CompilerBox over SQS"}
+  - {name: nkb_exam, purpose: "Exam definitions and attempts; exposes the ServiceInterface nkb_backend and learning call"}
+  - {name: nkb_assessment, purpose: "Assessment definitions, attempts, submission and scoring"}
+  - {name: nkb_coding_practice, purpose: "Practice problems and submissions"}
+  - {name: nkb_coding_contest, purpose: "Contests"}
+  - {name: nkb_certificate, purpose: "Certificate issuance; emits GENERATE_CERTIFICATE via ib_events"}
+  - {name: nkb_plagiarism, purpose: "Plagiarism detection"}
+  - {name: nkb_leaderboard, purpose: "Assessment-scoped leaderboard. Distinct from external ib_leaderboard / nw_leaderboard packages."}
+  app_count: 19
+  evidence: nkb_assessment_backend/settings/base_swagger_utils.py:25-45
+
+interfaces:
+  inbound:
+    - {kind: http, detail: "/api/<app_name>/ per app, generated from api_specs/api_spec.json"}
+    - {kind: in_process_service_interface, detail: "interfaces/service_interface.py per app, called by nkb_backend and nkb_learning_backend"}
+    - {kind: sqs_response_dispatch, detail: "receives CompilerBox results indirectly - nkb_backend's sqs_lambda_handler consumes and calls back into assessment receivers"}
+  outbound:
+    - {target: CompilerBox, mechanism: "SQS publish", evidence: "nkb_question/adapters/compile_box_service_adapter_v3.py:91-94"}
+    - {target: nkb_learning_backend, mechanism: "in-process import, LAZY and UNDECLARED", evidence: "nkb_coding_practice/adapters/coding_core_service_adapter.py:75; nkb_exam/adapters/learning_resource_service_adapter.py:19"}
+    - {target: Codeforces, mechanism: HTTP}
+    - {target: ib_events bus, mechanism: emit_event}
+
+data:
+  databases_referenced:
+    - "Shared relational default DB via RDS_* env vars"
+    - "DynamoDB via ib_pynamodb"
+
+async:
+  queues: ["CompilerBox code-evaluation request queue (publish side)"]
+  events: ["ib_events emissions including GENERATE_CERTIFICATE"]
+  workers: ["Zappa async Lambda tasks", "Step Functions"]
+
+aws_references:
+  s3: true
+  sqs: true
+  sns: false
+  lambda: true
+  step_functions: true
+  cloudwatch: true
+  dynamodb: true
+
+tests:
+  frameworks: [pytest, pytest-django, factory-boy, snapshottest]
+  commands: ["python manage.py build -at", "python -m pytest"]
+  note: "pytest.ini norecursedirs excludes nkb_learning_backend/settings, implying a co-checkout layout."
+
+documentation:
+  project_docs: present
+  note: "Per-app markdown under project_docs/. Coverage is partial; verify against source."
+
+known_gaps:
+  - claim: "There is an exam eligibility module."
+    reality: >-
+      No such module, app, or named service exists. Eligibility is decided by
+      validation code inlined inside StartExamAttemptForUserInteractor and
+      StartAssessmentAttemptForUserInteractor. Answering 'where is eligibility'
+      requires pointing at those interactors, not at a component.
+  - claim: "Cross-repo calls are RPC."
+    reality: "They are in-process Python imports. See knowledge/cross-repo-dependencies.md."
+  - "Depends on nkb_learning_backend at runtime without declaring it in pyproject.toml."
+  - "Receivers for end_exam_sender and the two Woolf signals were not found in any of the three repos."

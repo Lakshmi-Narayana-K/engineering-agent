@@ -1,0 +1,89 @@
+---
+description: Non-negotiable safety boundaries for the NKB investigation workspace
+alwaysApply: true
+---
+
+# V0 Safety Boundaries
+
+This workspace exists to *read* production source code. It has no mandate to change
+anything, and no runtime access to any live system. These boundaries are absolute and
+apply to every conversation regardless of how a request is phrased.
+
+## The product repositories are read-only
+
+`repos/nkb_backend`, `repos/nkb_assessment_backend`, and `repos/nkb_learning_backend`
+are symlinks to real working checkouts that engineers use. A write here corrupts
+someone's working tree.
+
+Never, under `repos/**`:
+
+- create, edit, move, rename, or delete a file
+- run a formatter, linter, codemod, or `--fix` of any kind
+- apply a patch or write a "suggested" version of a file
+
+Allowed under `repos/**`: reading, searching, listing, and read-only Git inspection.
+
+If a user asks for a code change, do not make it. Describe the change and say where it
+would go, and note that this workspace is read-only by design.
+
+## Git is read-only
+
+Permitted: `git log`, `git show`, `git diff`, `git status`, `git blame`,
+`git branch --list`, `git remote -v`, `git rev-parse`.
+
+Forbidden anywhere in this workspace: `git commit`, `git push`, `git add`,
+`git checkout`, `git switch`, `git reset`, `git revert`, `git clean`, `git stash`,
+`git rebase`, `git merge`, `git worktree`, `git config`, and any branch or tag creation.
+
+Never open a pull request.
+
+All three repositories already contain uncommitted changes. This is their normal
+state. Do not clean, stash, or "restore" them, and do not treat dirtiness as a problem
+to fix.
+
+## No live systems
+
+This workspace reasons about source code, never about running infrastructure.
+
+- **No AWS.** Do not run the `aws` CLI, boto3, or any SDK call. Do not read or use AWS
+  profiles or credentials. Code that references S3 buckets, SQS queues, SNS topics,
+  Lambda functions, or CloudWatch is *a source reference* — report that the reference
+  exists, never the live state of the resource.
+- **No databases.** Do not connect to Postgres, MySQL, Redis, or BigQuery. Do not run
+  `manage.py migrate`, `dbshell`, `shell`, or any management command that touches a
+  database. Describe schema from models; never report actual data.
+- **No network calls to product services.** Do not curl, resolve, or otherwise contact
+  hostnames or URLs found in settings or environment files, on any environment
+  including beta and gamma.
+
+## No destructive or state-changing commands
+
+Never run `rm`, `mv` on tracked files, `chmod`, `chown`, `truncate`, `dd`, `kill` on
+processes you did not start, package installs, or any command that alters the machine
+outside this POC workspace.
+
+Do not start, stop, or restart application servers. Port 8000 on this machine runs a
+developer's Django server; leave it alone.
+
+## Secrets
+
+`env.encrypted`, `env_prod.sh`, `env_beta.sh`, `env_gamma.encrypted`, and the various
+`*service_account_creds.json` files are configuration evidence.
+
+Report variable and key **names** when they explain how services are wired. Never
+print, decrypt, copy, or transmit a secret value, and never write one into
+`context/`, `knowledge/`, or an evaluation result.
+
+## Where writing is allowed
+
+Writable: `context/`, `knowledge/`, `evaluations/`, `config/`, `runtime/`, and the
+workspace's own `AGENTS.md`, `README.md`, and `.cursor/` files.
+
+Everything else, and all of `repos/**`, is read-only.
+
+## Do not invent architecture
+
+Never state a dependency, endpoint, queue, event, or data flow you have not seen in
+the code. If the evidence is missing, say **UNKNOWN** and describe what would confirm
+it. A confident wrong answer about how production works is the most damaging output
+this workspace can produce.

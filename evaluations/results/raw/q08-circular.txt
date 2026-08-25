@@ -1,0 +1,19 @@
+agent_kind       : acp
+acp_server       : custom
+acp_command      : ['node', '/home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc/runtime/cursor/cursor-acp-shim.mjs', 'acp']
+acp_session_mode : ask
+
+workspace        : /home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc
+prompt           : Is there a circular dependency between the three repositories? Verify in code and cite evidence.
+
+conversation     : 40a786a5-b792-418b-a1de-af6f3d20564e
+  [   0.0s] status -> idle
+  [   8.1s] status -> running
+  [ 106.4s] status -> finished
+
+events           : 100
+--- agent output ---
+(no agent text)
+--- end ---
+
+FAIL: expected substring 'CURSOR_ACP_CONNECTED' not found in agent output

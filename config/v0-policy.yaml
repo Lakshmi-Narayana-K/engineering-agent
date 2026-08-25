@@ -1,0 +1,185 @@
+# V0 policy: what this POC is allowed to touch.
+#
+# Enforcement is layered. Read the `enforcement` field on each control honestly -
+# some controls are enforced by a system, others are advisory and backed only by a
+# detective check. Knowing which is which matters more than the list being long.
+
+version: 1
+
+scope:
+  goal: >-
+    Prove that a non-developer can ask a question in a browser and have Cursor
+    investigate three local repositories and answer with evidence.
+  data_sources:
+    - local repository source code
+    - project_docs and other in-repo documentation
+    - Git metadata (read-only)
+    - repository configuration files (names only, never secret values)
+    - existing tests
+  # Scope was widened deliberately after the code-investigation path was proven.
+  # CloudWatch, the AWS API server and Rapid7 are now attached and gated; see
+  # mcp.allowedServers in config/acp-permissions.json for exactly which tools.
+  in_scope_added_2026_08_25:
+    - CloudWatch logs and metrics, scoped to the nxtwave-alpha account
+    - AWS resource metadata via the AWS API MCP server, read operations only
+    - Rapid7 InsightIDR, read-only tools only (NOTE: live platform, not alpha)
+  explicitly_out_of_scope:
+    - ToolHive, Azure, database SQL access (see knowledge/rds-access.md)
+    - Open SWE, Deep Agents, Dagger, Playwright, Testcontainers, Floci, OpenTofu
+    - ephemeral AWS, deployment automation, production AWS accounts, PR generation
+
+filesystem:
+  read_only:
+    - repos/**
+  read_write:
+    - context/**
+    - knowledge/**
+    - evaluations/**
+    - config/**
+    - runtime/**
+
+controls:
+  - id: shim-policy
+    control: runtime/cursor/cursor-acp-shim.mjs enforces config/acp-permissions.json
+    enforcement: ENFORCED
+    by: the shim itself
+    detail: >-
+      THIS IS THE PRIMARY CONTROL. In ACP mode Cursor applies none of its own
+      permissions - it delegates every gated action to the client via
+      session/request_permission, and Agent Server auto-approves whatever it
+      receives. The shim is the only process we control that sees every request,
+      so it answers them itself rather than forwarding. Fail-closed: an
+      unreadable or malformed policy denies everything.
+      Gates shell commands per segment, MCP tools by server and name, AWS calls
+      by parsed service and operation, and SQL by statement keyword.
+      Every decision is appended to runtime/logs/acp-permissions.jsonl.
+      See knowledge/enforcement-model.md for what was tested.
+
+  - id: session-mode-ask
+    control: ACP session runs in Cursor `ask` mode
+    enforcement: PARTIAL
+    by: Cursor CLI
+    detail: >-
+      CORRECTED 2026-08-25. Ask mode blocks file WRITES only. It does NOT remove
+      the shell: `aws sts get-caller-identity` and `id -un` both ran to completion
+      in ask mode. The earlier claim that this was "the strongest control in the
+      stack" was wrong - it came from observing 54 tool calls that happened to use
+      only read and search, which was the agent not needing shell rather than
+      being unable to use it. Retained as a layer, not relied upon.
+
+  - id: env-scrubbing
+    control: ambient AWS credentials are stripped from the child environment
+    enforcement: ENFORCED
+    by: the shim
+    detail: >-
+      AWS_PROFILE, AWS_ACCESS_KEY_ID, AWS_CONFIG_FILE and related variables are
+      deleted before `agent acp` starts, then replaced with a scoped identity from
+      runtime/aws/credentials. Load-bearing: on this machine AWS_PROFILE=default
+      resolves to a DIFFERENT account than the alpha one this POC is scoped to,
+      so inheriting it would have pointed the agent at production while every
+      config file said otherwise. On ECS the credentials file is absent and boto3
+      falls through to the task role, which is the intended behaviour.
+
+  - id: home-isolation
+    control: HOME is redirected to runtime/cursor-home
+    enforcement: ENFORCED
+    by: the shim
+    detail: >-
+      `agent acp` accepts no flags, so overriding HOME is the only way to control
+      which config Cursor reads. Two effects: project-scoped MCP servers load at
+      all (ACP ignores the project .cursor/mcp.json and reads only the global
+      one), and the developer's Cursor login becomes unreachable - which is why
+      CURSOR_API_KEY is required. That is the same credential path the deployed
+      container uses, so local and production stop diverging.
+
+  - id: cursor-rules
+    control: .cursor/rules/00-v0-safety.mdc and 10-multi-repo-investigation.mdc
+    enforcement: ADVISORY
+    by: prompt
+    detail: >-
+      Always-applied rules stating the read-only boundary, no-AWS, no-DB, and
+      no-Git-write policy. Instruction-following, not a technical barrier.
+
+  - id: agents-md
+    control: AGENTS.md at workspace root
+    enforcement: ADVISORY
+    by: prompt
+    detail: Cross-repo instructions, evidence requirements, and the read-only rule.
+
+  - id: symlink-boundary
+    control: repos/ contains symlinks, not copies
+    enforcement: STRUCTURAL
+    by: filesystem layout
+    detail: >-
+      Keeps the original checkouts as the single source of truth and avoids a 2.1GB
+      duplicate drifting out of date. Note this does NOT prevent writes - a symlink
+      is fully writable. It is a correctness control, not a safety control.
+
+  - id: git-baseline
+    control: runtime/cursor/baseline/*.porcelain and *.meta
+    enforcement: DETECTIVE
+    by: scripts/verify-product-repos-untouched.sh
+    detail: >-
+      Records branch, HEAD, and `git status --porcelain` per repo at setup time.
+      The verify script diffs current state against it and fails on any new change.
+      Detects a violation after the fact; does not prevent one.
+
+  - id: aws-iam-boundary
+    control: the agent's AWS identity is read-only by explicit deny
+    enforcement: ENFORCED
+    by: AWS IAM
+    detail: >-
+      Policy nkb-agent-readonly-alpha allows 35 read actions across CloudWatch,
+      ECS, Lambda, SQS, Step Functions and RDS metadata, with a Deny/NotAction
+      statement refusing everything else. Independent of our code, which is what
+      makes it valuable: an AccessDenied on logs:DescribeQueryDefinitions was
+      returned by AWS, not by the shim.
+      Source: provisioning/iam/agent-readonly-permissions.json.
+
+  - id: mcp-gating
+    control: MCP servers are default-deny, allowlisted per tool
+    enforcement: ENFORCED
+    by: the shim
+    detail: >-
+      A server absent from mcp.allowedServers is fully blocked even when attached
+      and advertising tools. Verified before gating existed: the agent called
+      insightidr run_log_search and search_assets against the live platform
+      unprompted. Also verified after: a newly declared server was blocked on
+      first use with no extra configuration.
+      Tool visibility is NOT the control - invocation gating is. Non-allowlisted
+      tools still appear in the agent's tool list and are refused when called.
+
+known_gaps:
+  - >-
+    FILE READS ARE NOT GATED BY ANYTHING. Cursor never emits
+    session/request_permission for a read, so the shim cannot deny one - across
+    every recorded session there are zero audit entries of kind `read`. Eleven
+    credential-bearing files are reachable under repos/, including env_prod.sh
+    and four service-account JSONs with plaintext private keys, and no audit
+    record is produced when they are read. This exists only because the agent
+    points at local working copies; the CodeCommit clones contain none of them.
+    Strongest fix is relocating those files. See knowledge/enforcement-model.md.
+  - >-
+    Write protection on repos/** is preventive for shell (the shim denies the
+    commands) and detective for everything else. Kernel-level read-only bind
+    mounts were considered and deferred because they need sudo and do not survive
+    reboot without an fstab entry.
+  - >-
+    Rapid7 InsightIDR points at the LIVE security platform, not alpha. The read
+    tool set was enumerated by hand rather than inferred from name prefixes,
+    because investigate_alerts and generate_alert_report sound read-only and are
+    not. A mistake here reaches production.
+  - >-
+    The AWS API MCP server is deprecated: end of development 2026-07-15, removed
+    2027-07-15. Migration target and reasoning are recorded under mcp.awsApi
+    $deprecation in config/acp-permissions.json.
+  - >-
+    The agent process is not sandboxed from the rest of the filesystem. HOME is
+    redirected and AWS credentials are scoped, but nothing prevents reading paths
+    outside the workspace.
+
+review_triggers:
+  - changing acp_session_mode away from `ask` or `plan`
+  - adding any MCP server to the workspace
+  - granting the agent any credential
+  - pointing the workspace at a repository not listed in config/repos.yaml

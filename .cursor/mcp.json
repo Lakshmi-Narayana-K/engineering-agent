@@ -1,0 +1,39 @@
+{
+  "_comment": "Project-scoped MCP servers. Every server here is also gated by mcp.allowedServers in config/acp-permissions.json, which the ACP shim enforces on each tool call - being listed here only makes a server reachable, never permitted. The server key is what appears in the permission title, so it must match the allowlist key exactly. This file must stay portable and secret-free, so it carries no absolute paths and no credentials: ${poc:<relpath>} expands to an absolute path under the POC root and ${file:<relpath>} to the contents of a gitignored file, both resolved by the shim when it materialises runtime/cursor-home/.cursor/mcp.json. AWS servers need neither - their credentials come from runtime/aws/credentials via the isolated HOME, and on ECS from the task role.",
+  "mcpServers": {
+    "cloudwatch-alpha": {
+      "command": "uvx",
+      "args": ["awslabs.cloudwatch-mcp-server@latest"],
+      "env": {
+        "AWS_PROFILE": "nkb-agent-alpha",
+        "AWS_REGION": "ap-south-1",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    },
+    "aws-api-alpha": {
+      "command": "uvx",
+      "args": ["awslabs.aws-api-mcp-server@latest"],
+      "env": {
+        "AWS_API_MCP_PROFILE_NAME": "nkb-agent-alpha",
+        "AWS_REGION": "ap-south-1",
+        "READ_OPERATIONS_ONLY": "true",
+        "AWS_API_MCP_ALLOW_UNRESTRICTED_LOCAL_FILE_ACCESS": "no-access",
+        "AWS_API_MCP_TELEMETRY": "false",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    },
+    "sql-probe": {
+      "command": "node",
+      "args": ["${poc:runtime/mcp/sql-probe.mjs}"],
+      "env": {}
+    },
+    "insightidr": {
+      "command": "${poc:runtime/mcp/r7-insightidr/.venv/bin/mcp-insightidr}",
+      "args": [],
+      "env": {
+        "INSIGHTIDR_API_KEY": "${file:runtime/rapid7/api-key}",
+        "INSIGHTIDR_REGION": "eu"
+      }
+    }
+  }
+}

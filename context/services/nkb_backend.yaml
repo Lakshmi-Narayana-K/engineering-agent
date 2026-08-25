@@ -1,0 +1,95 @@
+name: nkb_backend
+repository:
+  local_path: /home/nxtwave/Desktop/CodeBase-HUB/nkb_backend
+  branch: ccbp_beta
+  head: 940bafbb
+  dirty_at_baseline: true
+
+role: composition root
+purpose: >-
+  The deployable Django project for the NxtWave/CCBP platform. It owns almost no
+  domain logic of its own. Its job is to compose ~90 Django apps - a handful
+  first-party, the rest installed from sibling repositories and internal pip
+  packages - into one runtime, and to own every deployment entry point: HTTP via
+  API Gateway, WebSocket, EventBridge, SQS, cron, ECS tasks, and a Bedrock
+  AgentCore gateway.
+
+technology:
+  languages: [Python]
+  frameworks:
+    - Django 5.1 (pyproject.toml)
+    - djangorestframework, oauth2_provider, rest_framework_api_key
+    - django-swagger-utils / dsu (URL and validator code generation from api_spec.json)
+    - Zappa (AWS Lambda deployment)
+    - PynamoDB / ib_pynamodb (DynamoDB models)
+    - boto3
+
+entry_points:
+  - {path: manage.py, kind: cli}
+  - {path: nkb_backend/wsgi.py, kind: wsgi, note: "Zappa entry for the HTTP Lambda"}
+  - {path: nkb_backend/urls.py, kind: routing, note: "builds /api/<app_name>/ from INSTALLED_APPS; union of all three repos' routes"}
+  - {path: nkb_backend/zappa_command_receiver.py, kind: lambda, note: "async command dispatcher; calls assessment and learning ServiceInterfaces in-process"}
+  - {path: nkb_backend/sqs_lambda_handler.py, kind: lambda, note: "consumes CompilerBox evaluation responses, dispatches into assessment receivers"}
+  - {path: nkb_backend/event_bridge_lambda_handler.py, kind: lambda}
+  - {path: nkb_backend/web_socket_lambda_handler.py, kind: lambda}
+  - {path: nkb_backend/agentcore_gateway_handler.py, kind: lambda, note: "Bedrock AgentCore"}
+  - {path: zappa_settings.json, kind: deployment, note: "sole owner of the four non-HTTP handler wirings"}
+
+major_modules:
+  - {name: nkb_core, purpose: "Shared platform primitives consumed by sibling repos via nkb_core.app_interfaces.service_interface"}
+  - {name: nkb_load_data, purpose: "Bulk content loading from Google Sheets into assessment and learning models; also ECS Fargate task launching"}
+  - {name: nkb_coach, purpose: "AI learning coach on Bedrock. NOTE: name collides with an app of the same name in nkb_learning_backend."}
+  - {name: nkb_content_mcp, purpose: "MCP server surface over platform content"}
+  - {name: nkb_gamification_wrapper, purpose: "Wrapper over external gamification packages"}
+
+interfaces:
+  inbound:
+    - {kind: http, detail: "/api/<app_name>/ for every app in INSTALLED_APPS", evidence: "nkb_backend/urls.py:37-44"}
+    - {kind: sqs, detail: "CompilerBox code-evaluation response queue", evidence: "sqs_lambda_handler.py:19-26"}
+    - {kind: event_bridge, detail: "ib_events subscriptions", evidence: "event_bridge_lambda_handler.py"}
+    - {kind: websocket, detail: "API Gateway WebSocket", evidence: "web_socket_lambda_handler.py"}
+    - {kind: lambda_command, detail: "zappa_command_receiver dispatches dotted-path commands", evidence: "zappa_command_receiver.py"}
+  outbound:
+    - {target: nkb_assessment_backend, mechanism: in-process import, evidence: "zappa_command_receiver.py:21"}
+    - {target: nkb_learning_backend, mechanism: in-process import, evidence: "zappa_command_receiver.py:287"}
+    - {target: AWS Bedrock, mechanism: boto3 Converse streaming}
+    - {target: Google Sheets / BigQuery, mechanism: HTTP}
+
+data:
+  databases_referenced:
+    - "Relational default DB from RDS_* env vars; engine env-supplied, both psycopg2 and mysqlclient present"
+    - "DynamoDB via ib_pynamodb"
+  routing: "nkb_backend/db_router.py:8-25 - no per-app routing; allow_relation always returns True"
+
+async:
+  queues: ["CompilerBox-code-evaluation-request-*", "CompilerBox-code-evaluation-response-*"]
+  events: ["ib_events subscriptions and emissions"]
+  workers: ["Zappa async Lambda tasks", "AWS Step Functions", "ECS Fargate tasks", "83 declared cron jobs"]
+
+aws_references:
+  s3: true
+  sqs: true
+  sns: false
+  lambda: true
+  step_functions: true
+  cloudwatch: true
+  dynamodb: true
+  bedrock: true
+  rekognition: true
+  ssm: true
+
+tests:
+  frameworks: [pytest, pytest-django, factory-boy, snapshottest]
+  commands: ["python manage.py build -at", "python -m pytest"]
+
+documentation:
+  project_docs: NONE
+  note: >-
+    This repo has no project_docs/ directory. It is the least documented of the
+    three despite being the deployable. Treat source as the only authority here.
+
+known_gaps:
+  - "No project_docs/ at all."
+  - "80 of 83 cron schedules have no visible provisioning mechanism in the repo."
+  - "pyproject.toml and requirements_project.txt disagree on sibling package versions by two major versions."
+  - "nkb_coach app name collides with nkb_learning_backend/nkb_coach."

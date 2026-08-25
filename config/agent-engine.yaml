@@ -1,0 +1,105 @@
+# Agent engine configuration for V0.
+#
+# Architecture:  Browser -> Agent Canvas -> Agent Server -> ACP shim -> `agent acp`
+#
+# Agent Canvas and Agent Server are upstream OpenHands components used as-is. The
+# only custom code in the path is runtime/cursor/cursor-acp-shim.mjs.
+#
+# scripts/start.sh applies the `agent_settings` block below to the running Agent
+# Server via PATCH /api/settings. Editing this file changes the deployed config.
+
+version: 1
+
+stack:
+  # Installed globally: npm install -g @openhands/agent-canvas
+  agent_canvas:
+    package: "@openhands/agent-canvas"
+    version: "1.15.0"
+    command: agent-canvas
+    ingress_port: 8100        # upstream default is 8000, already taken on this host
+    url: http://localhost:8100
+    state_dir: ~/.openhands/agent-canvas
+
+  agent_server:
+    package: openhands-agent-server
+    version: "1.42.1"          # resolved by agent-canvas via uvx
+    port: 18000
+    health: http://localhost:18000/health
+    launched_by: agent-canvas   # not started independently
+
+  automation:
+    port: 18001
+    launched_by: agent-canvas
+
+auth:
+  # Local mode: the key is auto-injected into the frontend, so the browser needs
+  # no login. Pinned here so scripts and the UI agree on one value.
+  env_var: LOCAL_BACKEND_API_KEY
+  value: nkb-poc-local-key
+  header: X-Session-API-Key
+  public_mode: false
+
+engine:
+  kind: cursor_acp
+  cli:
+    command: agent
+    subcommand: acp
+    version: "2026.08.11-e8db854"
+    # Cursor is already authenticated via `agent login`; because Agent Server runs
+    # on this same host, the ACP subprocess inherits that login. No API key needed.
+    auth: subscription_login
+    auth_method_id: cursor_login
+
+# Applied verbatim as the `agent_settings_diff` of PATCH /api/settings.
+# `acp_command` is an argv array because the workspace path contains a space.
+agent_settings:
+  agent_kind: acp
+  acp_server: custom          # Cursor is not a built-in OpenHands provider
+  acp_command:
+    - node
+    - "{{POC_ROOT}}/runtime/cursor/cursor-acp-shim.mjs"
+    - acp
+  acp_args: []
+  acp_model: null             # let Cursor use its own default (Auto)
+  acp_session_mode: ask
+  acp_prompt_timeout: 900.0   # lowered from the 1800s default to surface hangs sooner
+  acp_startup_timeout: 120.0
+
+session_mode:
+  selected: ask
+  rationale: >-
+    Ask mode is read-only and cannot edit files or execute shell commands, which
+    matches the read-only mandate without relying on prompt compliance. It still
+    has file read, glob, and grep tools, which is sufficient for code investigation
+    - verified by probe: it read apps.py across all three repos through the symlinks.
+  alternative: plan
+  alternative_rationale: >-
+    Plan mode is also read-only but has broader tool access, so use it if questions
+    start needing `git log` or `rg` via shell. It triggers cursor/create_plan, which
+    the shim already handles. Do NOT switch to `agent` mode: it permits file writes.
+
+workspace:
+  # The ACP subprocess runs with cwd set to the POC root, so one search covers all
+  # three repositories plus the generated context.
+  working_dir: "{{POC_ROOT}}"
+  reachable:
+    - repos/nkb_backend
+    - repos/nkb_assessment_backend
+    - repos/nkb_learning_backend
+    - context/
+    - knowledge/
+    - AGENTS.md
+    - .cursor/rules/
+
+# Replacing Cursor with another engine is a change to `agent_settings` only. Agent
+# Canvas and Agent Server are unaffected, which is the point of the ACP boundary.
+future_engines:
+  claude_code:
+    acp_server: claude-code
+    acp_command: [npx, "-y", "@agentclientprotocol/claude-agent-acp"]
+  codex:
+    acp_server: codex
+    acp_command: [npx, "-y", "@zed-industries/codex-acp"]
+  gemini_cli:
+    acp_server: gemini-cli
+    acp_command: [npx, "-y", "@google/gemini-cli", "--acp"]

@@ -1,0 +1,58 @@
+agent_kind       : acp
+acp_server       : custom
+acp_command      : ['node', '/home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc/runtime/cursor/cursor-acp-shim.mjs', 'acp']
+acp_session_mode : ask
+
+workspace        : /home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc
+prompt           : How do assessment results get into the learning system? Cite the actual handler code.
+
+conversation     : 50dbcbaa-6816-40ab-bc18-81e8aea762bc
+  [   0.0s] status -> idle
+  [   7.7s] status -> running
+  [  55.8s] status -> finished
+
+events           : 61
+--- agent output ---
+I'll trace how assessment results enter the learning system and cite the handler that actually receives them.They do **not** arrive from `nkb_assessment_backend`. Learning never consumes an inbound webhook or SQS message for assessment scores. Results enter through `ib_events` subscriptions to **TOPIN** (external vendor). Two apps in `nkb_learning_backend` independently handle the same attempt-end event.
+
+**Repos:** `nkb_learning_backend` (handlers + persistence). `nkb_assessment_backend` is ruled out as the producer. `nkb_backend` is the composition root that hosts `ib_events`; it does not own this flow.
+
+**Confidence:** HIGH (handlers and interactors opened).
+
+---
+
+### 1. Event subscription (both handlers)
+
+The subscription name is an env-backed setting:
+
+```479:482:repos/nkb_learning_backend/nkb_learning_backend/settings/base.py
+IB_EVENTS_TOPIN_ASSESSMENT_ATTEMPT_END_SUBSCRIPTION = os.environ.get(
+    "IB_EVENTS_TOPIN_ASSESSMENT_ATTEMPT_END_SUBSCRIPTION", "")
+IB_EVENTS_TOPIN_ASSESSMENT_ATTEMPT_START_SUBSCRIPTION = os.environ.get(
+    "IB_EVENTS_TOPIN_ASSESSMENT_ATTEMPT_START_SUBSCRIPTION", "")
+```
+
+---
+
+### 2. Placement path — trigger, then pull scores from TOPIN
+
+`handle_topin_assessment_attempt_end_for_job_section` takes `user_id` and `org_assessment_id` from the payload and calls `UpdateAttemptResultInteractor`. It does **not** persist `user_score` from the event.
+
+```11:40:repos/nkb_learning_backend/nkb_placement_support/sub_handlers/topin_assessment_attempt_end_sub_handler.py
+@register(settings.IB_EVENTS_TOPIN_ASSESSMENT_ATTEMPT_END_SUBSCRIPTION)
+def handle_topin_assessment_attempt_end_for_job_section(*args):
+    payload = args[0]
+    # ...
+    assessment_id = payload.get("org_assessment_id")
+    user_id = payload.get("user_id")
+    # ...
+        interactor = UpdateAttemptResultInteractor(storage)
+        interactor.update_attempt_result(
+            user_id, assessment_id,
+            attempt_end_datetime=get_current_local_date_time())
+```
+
+The interactor l
+--- end ---
+
+FAIL: expected substring 'CURSOR_ACP_CONNECTED' not found in agent output

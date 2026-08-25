@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeOnlyApprovedReadOnlyRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::<WORKLOAD_ACCOUNT_1>:role/nkb-agent-readonly",
+        "arn:aws:iam::<WORKLOAD_ACCOUNT_2>:role/nkb-agent-readonly"
+      ]
+    },
+    {
+      "Sid": "DenyEverythingElse",
+      "Effect": "Deny",
+      "NotAction": "sts:AssumeRole",
+      "Resource": "*"
+    }
+  ]
+}

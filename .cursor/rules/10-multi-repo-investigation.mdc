@@ -1,0 +1,93 @@
+---
+description: How to investigate a question across the three NKB repositories
+alwaysApply: true
+---
+
+# Multi-Repository Investigation
+
+Questions arrive without a repository attached, often from someone who does not know
+the repositories exist. Determining *where* the behaviour lives is part of the work,
+not a precondition supplied by the user.
+
+## Establish scope before searching
+
+Never assume the first plausible repository is the only one. Before grepping:
+
+1. Read `context/system.yaml` for domain ownership and known edges.
+2. Read `knowledge/cross-repo-dependencies.md`, including its **Rejected Edges**
+   section — it records relationships that look real but are not, and will stop you
+   re-deriving a wrong conclusion.
+3. Decide which repositories could plausibly participate, then search all of them.
+
+A question phrased around a single action ("what happens when a learner submits an
+exam?") frequently spans two services. Treat single-repo scope as a conclusion you
+reach, not an assumption you start with.
+
+## Documentation first, code second
+
+`repos/nkb_assessment_backend/project_docs/` and
+`repos/nkb_learning_backend/project_docs/` describe app behaviour per Django app.
+`repos/nkb_backend` has **no** top-level `project_docs/` — use its source,
+`apidoc.json`, and `nkb_coach/docs` instead.
+
+Use documentation to orient quickly, then verify every load-bearing claim against
+current source. Docs are architecture hints; code is implementation truth.
+
+When they disagree, report both, say which you verified, and add the discrepancy to
+`knowledge/documentation-gaps.md` if it is not already recorded. Never edit the
+original docs.
+
+## Trace real symbols
+
+Ground answers in named code, not directory names. These repositories follow a
+clean-architecture layering, so the layer tells you where to look:
+
+| Question | Layer to read |
+| --- | --- |
+| What rule decides this? | interactor |
+| What is read or written? | storage |
+| What does the API return? | presenter |
+| What is the route and its inputs? | view |
+| What is persisted? | model |
+| What runs on a schedule or off a queue? | management command, task, worker |
+
+Follow the chain rather than stopping at the first match: view → interactor → storage
+→ model. Grep finds candidates; reading the chain confirms which one actually runs.
+
+Watch for name collisions across repositories. Similar app and model names exist in
+more than one service, and matching a name in the wrong repository is the most common
+way to produce a confidently wrong answer.
+
+## Confirmed versus possible dependencies
+
+Classify every cross-service relationship:
+
+- **Confirmed** — you found code or config that performs the call, publish, or consume,
+  and you can cite the caller. Cite the receiving route or consumer too when you find
+  it; note explicitly when you could not.
+- **Possible** — suggestive evidence only: an environment variable naming another
+  service with no call site, a queue name appearing in one repo only, or a shared
+  identifier vocabulary. State precisely what is missing to confirm it.
+- **Rejected** — it resembles a cross-service edge but is not. The most frequent case
+  is a service-adapter or `interfaces/` call between two Django apps *within the same
+  repository*, which is an in-process function call, not a network hop.
+
+Shared vocabulary is not a dependency. Two services both using `user_id` are coupled
+in concept, not connected in code.
+
+## Evidence and confidence
+
+Cite `repos/<repo>/<path>` plus the symbol. Label claims **HIGH**, **MEDIUM**, or
+**LOW**, and use **UNKNOWN** freely rather than filling a gap. Confidence belongs on
+individual claims — an answer is often HIGH on where the code lives and LOW on whether
+a downstream service consumes it.
+
+## When to ask
+
+Ask the user when ambiguity would materially change the answer and code cannot resolve
+it — an ambiguous domain term, two equally valid readings of the question, or a term
+that maps to different apps in different repositories.
+
+Ask in plain prose at the end of your response, then stop. Do not ask when
+investigation would settle it; investigate, then state your interpretation alongside
+the answer so the user can correct it.

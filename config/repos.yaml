@@ -1,0 +1,67 @@
+# Product repositories exposed to the investigation workspace.
+#
+# These are existing local checkouts. They were NOT cloned by this POC and must
+# not be modified by it. `repos/<name>` is a symlink to `local_path`.
+#
+# `baseline` records the Git state captured at POC setup time. It is what
+# scripts/verify-product-repos-untouched.sh compares against. All three repos
+# were already dirty at capture; the check asserts "no new changes", not "clean".
+
+version: 1
+
+repositories:
+  - name: nkb_backend
+    local_path: /home/nxtwave/Desktop/CodeBase-HUB/nkb_backend
+    link: repos/nkb_backend
+    access: read-only
+    remote: ssh://git-codecommit.ap-south-1.amazonaws.com/v1/repos/nkb_backend
+    baseline:
+      branch: ccbp_beta
+      head: 940bafbb09a47c0daac45aea8c0c173b63108ab9
+      dirty_entries: 12
+      captured_at: "2026-08-25T11:13:00+05:30"
+    documentation:
+      project_docs: null   # this repo has no top-level project_docs/
+      other:
+        - nkb_coach/docs
+        - apidoc.json
+
+  - name: nkb_assessment_backend
+    local_path: /home/nxtwave/Desktop/CodeBase-HUB/nkb_assessment_backend
+    link: repos/nkb_assessment_backend
+    access: read-only
+    remote: ssh://git-codecommit.ap-south-1.amazonaws.com/v1/repos/nkb_assessment_backend
+    baseline:
+      branch: feat-practice-gamification-jatin
+      head: abab92d6029e6588d0a64085f92cc08cbc4e0c03
+      dirty_entries: 17
+      captured_at: "2026-08-25T11:13:00+05:30"
+    documentation:
+      project_docs: project_docs
+      other:
+        - cursor_docs
+        - .cursor/rules
+        - apidoc.json
+
+  - name: nkb_learning_backend
+    local_path: /home/nxtwave/Desktop/CodeBase-HUB/nkb_learning_backend
+    link: repos/nkb_learning_backend
+    access: read-only
+    remote: ssh://git-codecommit.ap-south-1.amazonaws.com/v1/repos/nkb_learning_backend
+    baseline:
+      branch: development
+      head: abb3d703b66fd6ec0d507795ad9bede7be53aaa1
+      dirty_entries: 24
+      captured_at: "2026-08-25T11:13:00+05:30"
+    documentation:
+      project_docs: project_docs
+      other:
+        - nkb_cohort/docs
+        - nkb_learning_path/docs
+        - apidoc.json
+        - add_records_oas.json
+
+notes:
+  - The repository is spelled `nkb_assessment_backend` (not `nkb_assessement_backend`).
+  - Only one checkout of each repository exists on this machine; there was no ambiguity.
+  - Symlinks are used rather than copies so the original checkouts stay the source of truth.

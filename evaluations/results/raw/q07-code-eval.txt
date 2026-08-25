@@ -1,0 +1,19 @@
+agent_kind       : acp
+acp_server       : custom
+acp_command      : ['node', '/home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc/runtime/cursor/cursor-acp-shim.mjs', 'acp']
+acp_session_mode : ask
+
+workspace        : /home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc
+prompt           : Trace end-to-end what happens when a learner submits code for a coding question, across all three repos. Cite file paths.
+
+conversation     : 08412ac9-167f-4db1-abe1-459fa2fdda57
+  [   0.0s] status -> idle
+  [   7.9s] status -> running
+  [ 166.4s] status -> finished
+
+events           : 100
+--- agent output ---
+(no agent text)
+--- end ---
+
+FAIL: expected substring 'CURSOR_ACP_CONNECTED' not found in agent output

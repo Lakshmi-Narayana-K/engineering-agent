@@ -1,0 +1,19 @@
+agent_kind       : acp
+acp_server       : custom
+acp_command      : ['node', '/home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc/runtime/cursor/cursor-acp-shim.mjs', 'acp']
+acp_session_mode : ask
+
+workspace        : /home/nxtwave/Desktop/CodeBase-HUB/Agentic Workflows/nkb-engineering-agent/nkb-agent-canvas-poc
+prompt           : How do nkb_backend, nkb_assessment_backend and nkb_learning_backend communicate with each other? Verify against the actual code. Cite file paths and state confidence.
+
+conversation     : 16ddcc36-ff8c-4d7b-85b3-0c97eedf53cf
+  [   0.0s] status -> idle
+  [   7.8s] status -> running
+  [ 120.2s] status -> finished
+
+events           : 100
+--- agent output ---
+(no agent text)
+--- end ---
+
+FAIL: expected substring 'CURSOR_ACP_CONNECTED' not found in agent output
