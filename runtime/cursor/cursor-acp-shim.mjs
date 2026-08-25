@@ -221,6 +221,21 @@ function buildChildEnv() {
   const env = { ...process.env };
   for (const key of AMBIENT_AWS_VARS) delete env[key];
 
+  /*
+   * In sandbox mode the child is a `docker run` wrapper, not Cursor itself, and
+   * the container is the isolation boundary. Redirecting HOME here would isolate
+   * the wrong process and break it: the Docker CLI reads its active context from
+   * $HOME/.docker/config.json, so a redirected HOME makes it fall back to the
+   * default socket - a different daemon, which does not have our image. The
+   * failure surfaces as a confusing "repository does not exist" pull attempt.
+   *
+   * The credential and HOME juggling below exists only to isolate a Cursor
+   * process running directly on the host. The container does that properly, at
+   * the kernel, so none of it applies. This is the first of the environment
+   * hacks the sandbox makes obsolete.
+   */
+  if (process.env.NKB_AGENT_COMMAND) return env;
+
   const settings = awsSettings();
   const credentials = path.join(POC_ROOT, "runtime/aws/credentials");
 
@@ -247,7 +262,16 @@ function buildChildEnv() {
 }
 
 const childArgs = process.argv.slice(2);
-const child = spawn("agent", childArgs.length ? childArgs : ["acp"], {
+
+/*
+ * Defaults to the Cursor CLI on PATH, which is the pre-sandbox behaviour.
+ * Setting NKB_AGENT_COMMAND to scripts/agent-sandbox.sh runs Cursor inside the
+ * container instead, with this process still answering permission requests from
+ * outside it. Keeping the default unchanged means the sandbox is opt-in until
+ * ToolHive restores MCP access over HTTP, which the container has no route to.
+ */
+const agentCommand = process.env.NKB_AGENT_COMMAND || "agent";
+const child = spawn(agentCommand, childArgs.length ? childArgs : ["acp"], {
   stdio: ["pipe", "pipe", "inherit"],
   env: buildChildEnv(),
 });

@@ -1,0 +1,68 @@
+# Patterns excluded when exporting product source into the agent workspace.
+#
+# Matched by `tar --exclude` against archive member paths, so these files are
+# never written rather than written and then deleted.
+#
+# Deliberately pattern-based rather than an explicit file list. An audit of the
+# three repositories found four committed credential files, but a list of those
+# four would silently miss the fifth that someone commits next month. Patterns
+# also mean this file can be reviewed without it becoming an index of where the
+# secrets are.
+#
+# scripts/export-clean-source.sh asserts that nothing matching these patterns
+# survives the export, and fails closed if anything does. Adding a pattern here
+# is safe; removing one needs a reason.
+
+# Environment and deployment scripts that carry real credentials.
+*env_prod*
+*env_staging*
+*env_production*
+.env
+.env.*
+*.env
+
+# Service account keys and certificates.
+*service_account*
+*serviceaccount*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials.json
+*credentials.json
+*-credentials.json
+
+# Private key material in any form.
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*.ppk
+
+# Cloud and tooling state that should come from the runtime, never the repo.
+.aws
+.aws/*
+.npmrc
+.pypirc
+.netrc
+
+# Local developer and IDE state: no value to an investigation, and a common
+# place for tokens and absolute paths to leak.
+.idea
+.idea/*
+.vscode
+.vscode/*
+*.iml
+
+# Compiled and cached artefacts. Excluded for signal, not secrecy: they bloat
+# the workspace and dilute search results the agent relies on.
+__pycache__
+__pycache__/*
+*.pyc
+*.pyo
+.pytest_cache
+.pytest_cache/*
+.mypy_cache
+.mypy_cache/*
+node_modules
+node_modules/*

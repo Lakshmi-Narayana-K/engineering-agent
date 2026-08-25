@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-08-25T14:21:26Z",
+  "mode": "sandbox",
+  "total": 11,
+  "open": 0,
+  "checks": [
+    {"check":"nkb_backend read-only","state":"closed","detail":"write refused by kernel"},
+    {"check":"nkb_assessment_backend read-only","state":"closed","detail":"write refused by kernel"},
+    {"check":"nkb_learning_backend read-only","state":"closed","detail":"write refused by kernel"},
+    {"check":"credential files absent","state":"closed","detail":"none in the workspace"},
+    {"check":"host AWS config absent","state":"closed","detail":"not present"},
+    {"check":"host Cursor MCP config absent","state":"closed","detail":"not present"},
+    {"check":"host home not mounted","state":"closed","detail":"no host home visible"},
+    {"check":"aws cli absent","state":"closed","detail":"not installed"},
+    {"check":"no foreign credentials in env","state":"closed","detail":"AWS and DB variables unset"},
+    {"check":"generated dir writable","state":"closed","detail":"writable as expected"},
+    {"check":"context read-only","state":"closed","detail":"readable, not writable"}
+  ]
+}
