@@ -18,6 +18,23 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 set +e
 
+# The gateway goes down deliberately, and first.
+#
+# It was already being stopped, just not on purpose: the port and descendant
+# sweep below caught ToolHive's proxy processes as collateral. That left the
+# workloads in a half-removed state while workspace/agent-state/mcp.json still
+# claimed they existed, which is how start.sh came to report a configured
+# gateway with nothing behind it.
+#
+# Asking ToolHive to stop its own workloads is also cleaner than signalling
+# them: it removes the containers rather than orphaning them.
+if [[ -x "$POC_ROOT/runtime/toolhive/bin/thv" ]]; then
+  XDG_CONFIG_HOME="$POC_ROOT/runtime/toolhive/config" \
+  XDG_DATA_HOME="$POC_ROOT/runtime/toolhive/data" \
+  XDG_STATE_HOME="$POC_ROOT/runtime/toolhive/state" \
+    bash "$POC_ROOT/scripts/toolhive-up.sh" --stop >/dev/null 2>&1
+fi
+
 declare -A TARGETS=()
 
 add_target() {

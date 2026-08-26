@@ -511,52 +511,28 @@ function toolArguments(toolCall) {
 }
 
 /*
- * aws-api-mcp-server exposes exactly one tool, `call_aws`, which runs any AWS
- * CLI command. Allowlisting it by name would therefore permit every API the
- * credentials can reach -- `ecs describe-services` and `ecs delete-service` are
- * indistinguishable at the tool level.
+ * The AWS CLI command parser that used to live here has been deleted. IAM is
+ * the boundary now, and unlike this parser it is enforced by AWS rather than by
+ * us reading a string correctly.
  *
- * IAM would still refuse the write, but that leaves IAM as the only control. The
- * arguments are visible in the payload, so gate on the real service and
- * operation and keep a third layer. This also makes the audit log name each AWS
- * call rather than recording hundreds of identical `call_aws` entries.
+ * The evidence that justified removing it, kept because it is the reason this
+ * is safe: through the ToolHive-managed path, `ecs list-clusters` returns real
+ * data while `ecs delete-service` and `iam create-user` return AccessDenied
+ * with an explicit deny. Recorded in
+ * evaluations/migration-baseline/aws-boundary.json. A policy simulation in the
+ * Phase 0 baseline showed the same for sqs:DeleteQueue before any of this
+ * existed.
+ *
+ * Worth being honest about what was lost: the parser named each AWS call in our
+ * audit log, where the tool name alone is just repeated `call_aws` entries.
+ * That readability now comes from CloudTrail, which is authoritative for AWS
+ * API calls in a way our log never was, plus ToolHive's per-call audit.
+ *
+ * It was also a genuine third layer, and three layers are better than two. The
+ * trade is deliberate: it was a hand-written parser deciding security outcomes
+ * from a string, in a process that also relays the protocol. Section 61 asks
+ * for the fewest custom security-critical components, not the most layers.
  */
-function evaluateAwsCli(toolCall) {
-  const config = policy.mcp?.awsApi ?? {};
-  const args = toolArguments(toolCall);
-  const command = String(args?.[config.argumentField ?? "cli_command"] ?? "").trim();
-
-  if (!command) {
-    return { allow: false, reason: "could not read the AWS CLI command from the request" };
-  }
-  // The server runs this through a CLI parser rather than a shell, but a
-  // metacharacter here means the request is not the shape we think it is.
-  if (/[;&|`$><\n]/.test(command)) {
-    return { allow: false, reason: "AWS command contains shell metacharacters" };
-  }
-
-  const tokens = command.split(/\s+/);
-  if (tokens[0] !== "aws") {
-    return { allow: false, reason: `expected an 'aws' command, got '${tokens[0]}'` };
-  }
-
-  // Skip flags and their values are irrelevant here: service and operation are
-  // always the first two positional tokens after `aws`.
-  const positional = tokens.slice(1).filter((t) => !t.startsWith("-"));
-  const [service, operation] = positional;
-  const allowed = (config.allowedOperations ?? {})[service];
-
-  if (!allowed) {
-    return { allow: false, reason: `AWS service '${service ?? "(none)"}' is not allowlisted` };
-  }
-  if (!allowed.includes(operation)) {
-    return {
-      allow: false,
-      reason: `'aws ${service} ${operation ?? "(none)"}' is not an allowlisted read operation`,
-    };
-  }
-  return { allow: true, reason: `'aws ${service} ${operation}' allowlisted` };
-}
 
 /*
  * Statement-level gating for SQL tools.
@@ -612,36 +588,60 @@ function evaluateSql(toolCall) {
   return { allow: true, reason: `SQL '${keyword}' permitted` };
 }
 
+/*
+ * MCP admission belongs to ToolHive now, not here.
+ *
+ * What replaced the allowlist that used to live in this function: the gateway
+ * refuses a non-admitted tool on tools/call, and does not advertise it on
+ * tools/list. Both are tested rather than assumed - see
+ * tests/security/run-toolhive-tests.sh and run-rapid7-tests.sh, and the
+ * recorded evidence in evaluations/migration-baseline/. So any MCP tool that
+ * reaches Cursor at all has already passed the gate, and re-checking the name
+ * here would only re-implement it in a second place that can drift.
+ *
+ * The exception is arguments. ToolHive admits a tool; it cannot judge what the
+ * tool was asked to do, and a tool that takes a command or a query as a
+ * parameter is the same tool either way. For AWS that is now IAM's job, proven
+ * by a recorded AccessDenied on ecs:DeleteService. For SQL there is no
+ * equivalent yet, so the statement check below stays - see evaluateSql.
+ */
 function evaluateMcp(title, toolCall) {
   const match = MCP_TITLE.exec(title);
   if (!match) {
     // Fail closed. Every kind-"other" call observed so far has been an MCP
     // tool; anything unrecognised is denied and shows up in the audit log,
-    // which is the signal to allowlist it deliberately rather than by default.
+    // which is the signal to look at it deliberately rather than by default.
     return { allow: false, reason: `unrecognised non-execute tool '${title}'` };
   }
 
   const [, server, tool] = match;
-  const allowedTools = (policy.mcp?.allowedServers ?? {})[server];
 
-  if (!allowedTools) {
-    return { allow: false, reason: `MCP server '${server}' is not in mcp.allowedServers` };
-  }
-  if (!allowedTools.includes(tool)) {
-    return { allow: false, reason: `MCP tool '${server}:${tool}' is not allowlisted` };
+  /*
+   * Host mode has no gateway in the path, so nothing has vetted this call.
+   * Denying outright is deliberate, and it makes host mode strictly more
+   * restrictive than before rather than less: the old allowlist here was the
+   * only MCP control on that path, and removing it without this would have
+   * been a silent downgrade of the rollback route.
+   *
+   * The consequence is worth stating: host mode is a debugging fallback for
+   * when the container itself is broken, not a reduced-capability version of
+   * the platform. Anything needing AWS or Rapid7 runs in the sandbox.
+   */
+  if (!process.env.NKB_AGENT_COMMAND) {
+    return {
+      allow: false,
+      reason: `MCP is only available through the ToolHive gateway; host mode has no governed path (tool '${server}:${tool}')`,
+    };
   }
 
-  // Tools that take a command or query as a parameter need their argument
-  // inspected; clearing the name check says nothing about what was requested.
-  const gated = `${server}:${tool}`;
-  if ((policy.mcp?.awsApi?.gatedTools ?? []).includes(gated)) {
-    return evaluateAwsCli(toolCall);
-  }
-  if ((policy.mcp?.sqlQuery?.gatedTools ?? []).includes(gated)) {
+  // Retained until DBHub plus a real read-only DB role prove the engine refuses
+  // writes, per section 32. Defence in depth while the hard boundary is still
+  // missing, not a permanent home for SQL policy.
+  if ((policy.mcp?.sqlQuery?.gatedTools ?? []).includes(`${server}:${tool}`)) {
     return evaluateSql(toolCall);
   }
 
-  return { allow: true, reason: `MCP tool '${server}:${tool}' allowlisted` };
+  return { allow: true, reason: `MCP tool '${server}:${tool}' admitted by ToolHive` };
 }
 
 function evaluateCommand(command) {

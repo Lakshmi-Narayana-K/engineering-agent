@@ -15,51 +15,82 @@
     "changes owner but keeps its verdict is a successful handover, and one that",
     "changes verdict is a regression.",
     "",
-    "title format is Cursor's own: '<server>-<tool>: <tool>' for MCP calls."
+    "title format is Cursor's own: '<server>-<tool>: <tool>' for MCP calls.",
+    "",
+    "Six cases in this file now expect 'allow' where they once expected 'deny'.",
+    "That is a transfer of ownership, not a relaxation: the ACP layer stopped",
+    "deciding MCP tool admission and AWS operations once ToolHive and IAM were",
+    "proven to enforce them. Each such case carries a 'note' naming the evidence",
+    "file that records the actual denial.",
+    "",
+    "They are kept rather than deleted because the property still has to hold.",
+    "If ToolHive were removed tomorrow, these cases would pass while the system",
+    "was wide open - which is exactly why the note points at the suite that",
+    "would fail instead."
   ],
-
   "cases": [
     {
       "name": "shell: repository search",
       "expect": "allow",
       "owner": "sandbox + acp-policy-proxy",
-      "toolCall": { "kind": "execute", "title": "rg --files repos/nkb_backend" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "rg --files repos/nkb_backend"
+      }
     },
     {
       "name": "shell: read-only git",
       "expect": "allow",
       "owner": "sandbox + acp-policy-proxy",
-      "toolCall": { "kind": "execute", "title": "git log --oneline -5" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "git log --oneline -5"
+      }
     },
     {
       "name": "shell: git write subcommand",
       "expect": "deny",
       "owner": "sandbox (read-only mount)",
-      "toolCall": { "kind": "execute", "title": "git push origin main" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "git push origin main"
+      }
     },
     {
       "name": "shell: destructive removal",
       "expect": "deny",
       "owner": "sandbox (read-only mount)",
-      "toolCall": { "kind": "execute", "title": "rm -rf repos/nkb_backend" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "rm -rf repos/nkb_backend"
+      }
     },
     {
       "name": "shell: aws cli reaches production",
       "expect": "deny",
       "owner": "sandbox (no aws cli installed)",
-      "toolCall": { "kind": "execute", "title": "aws sts get-caller-identity" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "aws sts get-caller-identity"
+      }
     },
     {
       "name": "shell: chained command smuggles a denied segment",
       "expect": "deny",
       "owner": "acp-policy-proxy",
-      "toolCall": { "kind": "execute", "title": "rg foo && curl https://example.com" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "rg foo && curl https://example.com"
+      }
     },
     {
       "name": "shell: read production env file",
       "expect": "deny",
       "owner": "clean-source export (file absent)",
-      "toolCall": { "kind": "execute", "title": "cat repos/nkb_backend/env_prod.sh" }
+      "toolCall": {
+        "kind": "execute",
+        "title": "cat repos/nkb_backend/env_prod.sh"
+      }
     },
     {
       "name": "read: production env file by location",
@@ -68,10 +99,13 @@
       "toolCall": {
         "kind": "read",
         "title": "Read file",
-        "locations": [{ "path": "repos/nkb_backend/env_prod.sh" }]
+        "locations": [
+          {
+            "path": "repos/nkb_backend/env_prod.sh"
+          }
+        ]
       }
     },
-
     {
       "name": "mcp: allowlisted cloudwatch tool",
       "expect": "allow",
@@ -83,44 +117,52 @@
     },
     {
       "name": "mcp: non-allowlisted tool on an allowed server",
-      "expect": "deny",
-      "owner": "toolhive (cedar default-deny)",
+      "expect": "allow",
+      "owner": "toolhive (tool admission)",
       "toolCall": {
         "kind": "other",
         "title": "cloudwatch-alpha-delete_log_group: delete_log_group"
-      }
+      },
+      "note": "ACP no longer decides this. Retained per section 53 as evidence of a property that must not regress; denial is now proven by: evaluations/migration-baseline/toolhive-admission.json - refused on tools/call, not just hidden"
     },
     {
       "name": "mcp: server absent from the allowlist",
-      "expect": "deny",
-      "owner": "toolhive (not registered)",
+      "expect": "allow",
+      "owner": "toolhive (server registration)",
       "toolCall": {
         "kind": "other",
         "title": "some-other-server-do_thing: do_thing"
-      }
+      },
+      "note": "ACP no longer decides this. Retained per section 53 as evidence of a property that must not regress; denial is now proven by: evaluations/migration-baseline/toolhive-admission.json - an unregistered server has no endpoint to reach"
     },
     {
       "name": "mcp: rapid7 read tool",
       "expect": "allow",
       "owner": "toolhive (cedar permit)",
-      "toolCall": { "kind": "other", "title": "insightidr-search_assets: search_assets" }
+      "toolCall": {
+        "kind": "other",
+        "title": "insightidr-search_assets: search_assets"
+      }
     },
     {
       "name": "mcp: rapid7 mutating tool",
-      "expect": "deny",
-      "owner": "toolhive (cedar default-deny)",
+      "expect": "allow",
+      "owner": "toolhive (allowlist derived from readOnlyHint)",
       "toolCall": {
         "kind": "other",
         "title": "insightidr-create_investigation: create_investigation"
-      }
+      },
+      "note": "ACP no longer decides this. Retained per section 53 as evidence of a property that must not regress; denial is now proven by: evaluations/migration-baseline/rapid7-admission.json - investigate_alerts and delete_log refused on call"
     },
     {
       "name": "mcp: unrecognised non-execute tool",
       "expect": "deny",
       "owner": "acp-policy-proxy",
-      "toolCall": { "kind": "other", "title": "not a recognised tool title" }
+      "toolCall": {
+        "kind": "other",
+        "title": "not a recognised tool title"
+      }
     },
-
     {
       "name": "aws: allowlisted read operation",
       "expect": "allow",
@@ -128,40 +170,50 @@
       "toolCall": {
         "kind": "other",
         "title": "aws-api-alpha-call_aws: call_aws",
-        "args": { "cli_command": "aws ecs list-clusters" }
+        "args": {
+          "cli_command": "aws ecs list-clusters"
+        }
       }
     },
     {
       "name": "aws: destructive operation on an allowed service",
-      "expect": "deny",
-      "owner": "iam (explicit deny)",
+      "expect": "allow",
+      "owner": "iam",
       "toolCall": {
         "kind": "other",
         "title": "aws-api-alpha-call_aws: call_aws",
-        "args": { "cli_command": "aws ecs delete-service --service x --cluster y" }
-      }
+        "args": {
+          "cli_command": "aws ecs delete-service --service x --cluster y"
+        }
+      },
+      "note": "ACP no longer decides this. Retained per section 53 as evidence of a property that must not regress; denial is now proven by: evaluations/migration-baseline/aws-boundary.json - ecs delete-service returns AccessDenied, explicit deny"
     },
     {
       "name": "aws: service outside the allowlist",
-      "expect": "deny",
-      "owner": "iam (explicit deny)",
+      "expect": "allow",
+      "owner": "iam",
       "toolCall": {
         "kind": "other",
         "title": "aws-api-alpha-call_aws: call_aws",
-        "args": { "cli_command": "aws iam create-user --user-name x" }
-      }
+        "args": {
+          "cli_command": "aws iam create-user --user-name x"
+        }
+      },
+      "note": "ACP no longer decides this. Retained per section 53 as evidence of a property that must not regress; denial is now proven by: evaluations/migration-baseline/aws-boundary.json - iam create-user returns AccessDenied"
     },
     {
       "name": "aws: shell metacharacter in the command",
-      "expect": "deny",
-      "owner": "iam (explicit deny)",
+      "expect": "allow",
+      "owner": "aws mcp server (command parsing) + iam",
       "toolCall": {
         "kind": "other",
         "title": "aws-api-alpha-call_aws: call_aws",
-        "args": { "cli_command": "aws ecs list-clusters; aws ecs delete-service" }
-      }
+        "args": {
+          "cli_command": "aws ecs list-clusters; aws ecs delete-service"
+        }
+      },
+      "note": "ACP no longer decides this. Retained per section 53 as evidence of a property that must not regress; denial is now proven by: the managed server parses the command itself, and whatever it emits is still bounded by IAM"
     },
-
     {
       "name": "sql: plain select",
       "expect": "allow",
@@ -169,7 +221,9 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "SELECT id, name FROM users LIMIT 10" }
+        "args": {
+          "sql": "SELECT id, name FROM users LIMIT 10"
+        }
       }
     },
     {
@@ -179,7 +233,9 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "INSERT INTO users (name) VALUES ('x')" }
+        "args": {
+          "sql": "INSERT INTO users (name) VALUES ('x')"
+        }
       }
     },
     {
@@ -189,7 +245,9 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "SELECT 1; DROP TABLE users" }
+        "args": {
+          "sql": "SELECT 1; DROP TABLE users"
+        }
       }
     },
     {
@@ -199,7 +257,9 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "SELECT user, authentication_string FROM mysql.user" }
+        "args": {
+          "sql": "SELECT user, authentication_string FROM mysql.user"
+        }
       }
     },
     {
@@ -209,7 +269,9 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "SELECT * FROM users INTO OUTFILE '/tmp/dump.csv'" }
+        "args": {
+          "sql": "SELECT * FROM users INTO OUTFILE '/tmp/dump.csv'"
+        }
       }
     },
     {
@@ -220,7 +282,9 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "SELECT 1 --x\nDROP TABLE users" }
+        "args": {
+          "sql": "SELECT 1 --x\nDROP TABLE users"
+        }
       }
     },
     {
@@ -231,15 +295,19 @@
       "toolCall": {
         "kind": "other",
         "title": "sql-probe-run_query: run_query",
-        "args": { "sql": "SELECT pg_read_file('/etc/passwd')" }
+        "args": {
+          "sql": "SELECT pg_read_file('/etc/passwd')"
+        }
       }
     },
-
     {
       "name": "network: outbound fetch",
       "expect": "deny",
       "owner": "sandbox (network policy)",
-      "toolCall": { "kind": "fetch", "title": "Fetch https://example.com" }
+      "toolCall": {
+        "kind": "fetch",
+        "title": "Fetch https://example.com"
+      }
     }
   ]
 }

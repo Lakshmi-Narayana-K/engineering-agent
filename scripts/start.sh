@@ -66,10 +66,23 @@ else
 fi
 
 heading "Sandbox:"
-# Opt-in with NKB_SANDBOX=1, because the sandbox changes where Cursor runs and
-# therefore what it can reach. Host mode remains the default until the governed
-# MCP path is proven in daily use; both modes are kept working so there is a
-# rollback that does not involve editing code.
+# The default. NKB_SANDBOX=0 falls back to running Cursor on the host.
+#
+# It became the default once the gateway could serve the capabilities the
+# sandbox otherwise lacks. That was the whole blocker: a container with no MCP
+# access cannot investigate anything, so until ToolHive carried AWS and Rapid7
+# into it, defaulting here would have traded a working platform for a safe one.
+#
+# Why this direction is the safe one, stated plainly: in host mode Cursor runs
+# as the developer, reads any file the developer can read, and spawns its own
+# MCP servers from ~/.cursor/mcp.json with credentials in the config. The only
+# thing standing between it and the developer's ~/.aws is our shim remembering
+# to redirect HOME. In sandbox mode those paths are not denied, they are absent,
+# and the kernel enforces that rather than our code.
+#
+# Host mode is kept working deliberately - section 7 asks for a rollback that is
+# not a code edit - but it is now the exception, and it is the mode where the
+# shim's own MCP allowlist still matters.
 #
 # The variable is set on the agent-canvas launch below rather than exported here.
 # Canvas spawns agent-server, which spawns the shim, and each inherits its
@@ -77,7 +90,7 @@ heading "Sandbox:"
 # the shim, which reads NKB_AGENT_COMMAND to decide whether to run Cursor in a
 # container instead of on the host.
 SANDBOX_ENV=()
-if [[ "${NKB_SANDBOX:-}" == "1" ]]; then
+if [[ "${NKB_SANDBOX:-1}" != "0" ]]; then
   sandbox_ok=true
 
   if docker image inspect "${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}" >/dev/null 2>&1; then
@@ -96,28 +109,56 @@ if [[ "${NKB_SANDBOX:-}" == "1" ]]; then
     sandbox_ok=false
   fi
 
-  # Without the gateway the sandbox has no MCP at all: AWS, and later Rapid7 and
-  # the database, simply disappear. Better to say so than to hand the user an
-  # agent that silently cannot look anything up.
-  if [[ -f "$POC_ROOT/workspace/agent-state/mcp.json" ]] \
-     && grep -q '"url"' "$POC_ROOT/workspace/agent-state/mcp.json" 2>/dev/null; then
-    ok "MCP gateway configured  $(dim "$(python3 -c "
-import json; print(', '.join(json.load(open('$POC_ROOT/workspace/agent-state/mcp.json'))['mcpServers']))" 2>/dev/null)")"
+  # The gateway is a dependency of this mode, so start it rather than asking the
+  # user to remember. Without it the sandbox has no MCP at all and AWS, Rapid7
+  # and later the database simply vanish.
+  #
+  # Checking that something ANSWERS, not that a config file exists. That
+  # distinction is not academic: stop.sh sweeps by port and by process
+  # descendants, which takes the gateway down with the stack, while
+  # workspace/agent-state/mcp.json survives. The file-only check therefore
+  # reported a configured gateway when nothing was listening, and the agent
+  # would have started with every external capability silently missing - the
+  # smoke test would still pass, because it does not use MCP.
+  export XDG_CONFIG_HOME="$POC_ROOT/runtime/toolhive/config"
+  export XDG_DATA_HOME="$POC_ROOT/runtime/toolhive/data"
+  export XDG_STATE_HOME="$POC_ROOT/runtime/toolhive/state"
+
+  if [[ -x "$POC_ROOT/runtime/toolhive/bin/thv" ]] \
+     && "$POC_ROOT/runtime/toolhive/bin/thv" list 2>/dev/null | grep -q running; then
+    ok "MCP gateway running  $(dim "$("$POC_ROOT/runtime/toolhive/bin/thv" list 2>/dev/null | grep -c running) server(s)")"
+  elif [[ -x "$POC_ROOT/runtime/toolhive/bin/thv" ]]; then
+    dim "  starting MCP gateway..."
+    if bash "$POC_ROOT/scripts/toolhive-up.sh" >/dev/null 2>&1 \
+       && "$POC_ROOT/runtime/toolhive/bin/thv" list 2>/dev/null | grep -q running; then
+      ok "MCP gateway started  $(dim "$("$POC_ROOT/runtime/toolhive/bin/thv" list 2>/dev/null | grep -c running) server(s)")"
+    else
+      bad "gateway failed to start"
+      dim "  bash scripts/toolhive-up.sh   (to see why)"
+      sandbox_ok=false
+    fi
   else
-    bad "no gateway config for the sandbox"
-    dim "  bash scripts/toolhive-up.sh"
+    bad "ToolHive is not installed"
+    dim "  bash scripts/toolhive-install.sh"
     sandbox_ok=false
   fi
 
+  # Fails rather than falling back to the host. A silent downgrade is the worst
+  # outcome available here: the platform would keep working, so nobody would
+  # investigate, and it would be running in the weaker mode precisely when
+  # something about the setup is already wrong.
   if [[ "$sandbox_ok" != true ]]; then
-    bad "sandbox requested but prerequisites are missing"
+    bad "cannot start the sandbox - fix the items above, or NKB_SANDBOX=0 to run on the host"
     exit 1
   fi
 
   SANDBOX_ENV=(NKB_AGENT_COMMAND="$POC_ROOT/scripts/agent-sandbox.sh")
   ok "enabled  $(dim "Cursor runs in a container, product source mounted read-only")"
 else
-  dim "host mode  (NKB_SANDBOX=1 to run Cursor in the container instead)"
+  bad "HOST MODE  $(dim "Cursor runs as you, with access to your home directory")"
+  dim "  Rollback path only. MCP servers are spawned from .cursor/mcp.json rather"
+  dim "  than through the gateway, so ToolHive admission and audit do not apply."
+  dim "  Unset NKB_SANDBOX to return to the sandbox."
 fi
 
 heading "Agent Server:"

@@ -37,6 +37,17 @@ const child = spawn(process.execPath, [SHIM, "acp"], {
     ...process.env,
     // Puts the fake agent ahead of the real Cursor CLI for this process only.
     PATH: `${path.join(HERE, "fake-agent")}${path.delimiter}${process.env.PATH}`,
+    /*
+     * Exercises the governed path, which is what the platform runs by default
+     * since the sandbox became the default in scripts/start.sh. The shim reads
+     * this variable to decide whether MCP admission has already been done by
+     * ToolHive; without it these cases would be testing host mode, which now
+     * denies MCP outright and is only a rollback route.
+     *
+     * Pointed at the fake agent rather than the real sandbox script so the
+     * suite stays hermetic - it must not need Docker, a gateway, or network.
+     */
+    NKB_AGENT_COMMAND: path.join(HERE, "fake-agent", "agent"),
     NKB_POLICY_CASES: CASES,
     NKB_POLICY_RESULTS: resultsPath,
   },
