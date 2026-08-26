@@ -53,6 +53,25 @@ MOUNTS=(
   --mount "type=bind,source=$ROOT/AGENTS.md,target=/workspace/AGENTS.md,readonly"
   --mount "type=bind,source=$WORKSPACE/agent-state,target=/home/agent/.cursor"
   --tmpfs "/tmp:rw,noexec,nosuid,size=512m"
+  # HOME itself must be writable, not just ~/.cursor. With a read-only root
+  # filesystem and only ~/.cursor mounted, session creation failed with
+  # "Failed to initialize session services" and no further diagnostic - Cursor
+  # writes state under HOME outside .cursor as well.
+  #
+  # A tmpfs rather than a bind mount, because none of it should outlive the
+  # session: this is scratch state, and anything worth keeping belongs in
+  # ~/.cursor (bind-mounted above) or /workspace/generated. It also stays true
+  # to the rule that nothing from the developer's home is visible - this HOME is
+  # created empty at start and discarded at exit.
+  #
+  # Nested mounts resolve by path depth, so the ~/.cursor bind and ~/.cache
+  # tmpfs still land inside this one.
+  # mode=1777 is load-bearing: a tmpfs is created root-owned, so without it the
+  # agent (uid 1001) still cannot write and the failure is identical to having
+  # no tmpfs at all. That cost an hour - the visible symptom was Cursor's
+  # "Failed to initialize session services", and the real error only appeared
+  # when the agent was run directly: EACCES: mkdir '/home/agent/.config'.
+  --tmpfs "/home/agent:rw,nosuid,size=256m,mode=1777"
 )
 
 # Cursor writes session state under $HOME/.cursor and fails to start without a
@@ -110,6 +129,18 @@ fi
 
 # ACP is a stdio protocol: the Agent Server writes requests on stdin and reads
 # responses on stdout, so nothing may be printed here that is not protocol.
+#
+# --trust answers Cursor's workspace-trust prompt, which otherwise blocks
+# session creation with no way to respond over ACP. It is worth being precise
+# about what it does and does not do: it marks the directory as trusted, and
+# nothing more. It is NOT --force/--yolo, which would allow commands without
+# asking - those stay off, so the permission prompts the ACP policy layer exists
+# to answer still happen.
+#
+# Trusting this directory is not a concession: it is our own export, mounted
+# read-only, containing only tracked product source that was filtered for
+# credentials on the way in.
 exec docker run --rm -i \
   "${MOUNTS[@]}" "${NETWORK[@]}" "${HARDENING[@]}" "${ENV_ARGS[@]}" \
-  "$IMAGE" acp
+  --entrypoint /usr/local/bin/agent \
+  "$IMAGE" --trust acp

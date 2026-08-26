@@ -234,7 +234,22 @@ function buildChildEnv() {
    * the kernel, so none of it applies. This is the first of the environment
    * hacks the sandbox makes obsolete.
    */
-  if (process.env.NKB_AGENT_COMMAND) return env;
+  if (process.env.NKB_AGENT_COMMAND) {
+    /*
+     * The one thing the container still needs from us: Cursor's key, which lives
+     * in a gitignored file the container cannot see (deliberately - nothing from
+     * the host is mounted). agent-sandbox.sh forwards it with --env only if it is
+     * already in this process's environment, so read it here.
+     *
+     * Note this is the whole of the credential handling in sandbox mode. AWS
+     * credentials are absent on purpose: they now live in the ToolHive-managed
+     * MCP proxy, and Cursor reaches AWS through the gateway rather than holding
+     * keys itself.
+     */
+    const apiKey = readApiKey();
+    if (apiKey) env.CURSOR_API_KEY = apiKey;
+    return env;
+  }
 
   const settings = awsSettings();
   const credentials = path.join(POC_ROOT, "runtime/aws/credentials");

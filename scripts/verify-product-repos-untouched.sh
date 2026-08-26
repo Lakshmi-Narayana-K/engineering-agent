@@ -9,6 +9,38 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 set +e
 
+# --rebaseline "<reason>" re-captures the current state as the new baseline.
+#
+# Needed because the developer keeps working in these repositories: a branch
+# switch or a pull is normal activity that legitimately moves HEAD, and without
+# a supported way to acknowledge it the only options are hand-editing the
+# baseline files or watching the check fail permanently. A check that is
+# expected to fail stops being read, which is worse than one that can be
+# updated deliberately.
+#
+# A reason is mandatory and recorded, so re-baselining leaves a trail. It is the
+# one operation that can mask a real modification, so it should be visible in
+# review rather than silent.
+if [[ "${1:-}" == "--rebaseline" ]]; then
+  reason="${2:-}"
+  [[ -n "$reason" ]] || { echo "--rebaseline requires a reason" >&2; exit 1; }
+
+  printf '\nRe-capturing product repository baseline\n'
+  for repo in "${REPOS[@]}"; do
+    path="$(repo_path "$repo")" || { bad "$repo: link missing"; continue; }
+    git -C "$path" status --porcelain > "${BASELINE_DIR}/${repo}.porcelain"
+    {
+      echo "branch=$(git -C "$path" rev-parse --abbrev-ref HEAD)"
+      echo "head=$(git -C "$path" rev-parse HEAD)"
+      echo "stashes=$(git -C "$path" stash list | wc -l)"
+    } > "${BASELINE_DIR}/${repo}.meta"
+    ok "$repo  $(dim "$(git -C "$path" rev-parse --abbrev-ref HEAD) @ $(git -C "$path" rev-parse --short HEAD)")"
+  done
+  printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$reason" >> "${BASELINE_DIR}/rebaseline.log"
+  printf '\n  recorded: %s\n\n' "$reason"
+  exit 0
+fi
+
 printf '\nProduct repository integrity\n'
 
 overall=0

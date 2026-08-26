@@ -65,6 +65,61 @@ else
   exit 1
 fi
 
+heading "Sandbox:"
+# Opt-in with NKB_SANDBOX=1, because the sandbox changes where Cursor runs and
+# therefore what it can reach. Host mode remains the default until the governed
+# MCP path is proven in daily use; both modes are kept working so there is a
+# rollback that does not involve editing code.
+#
+# The variable is set on the agent-canvas launch below rather than exported here.
+# Canvas spawns agent-server, which spawns the shim, and each inherits its
+# parent's environment - so setting it at the top of that chain is what reaches
+# the shim, which reads NKB_AGENT_COMMAND to decide whether to run Cursor in a
+# container instead of on the host.
+SANDBOX_ENV=()
+if [[ "${NKB_SANDBOX:-}" == "1" ]]; then
+  sandbox_ok=true
+
+  if docker image inspect "${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}" >/dev/null 2>&1; then
+    ok "image built  $(dim "${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}")"
+  else
+    bad "sandbox image missing"
+    dim "  docker build -t nkb-agent-runtime:2026.08.11-e8db854 docker/agent-runtime"
+    sandbox_ok=false
+  fi
+
+  if [[ -d "$POC_ROOT/workspace/repos" ]] && [[ -n "$(ls -A "$POC_ROOT/workspace/repos" 2>/dev/null)" ]]; then
+    ok "clean source exported  $(dim "$(ls "$POC_ROOT/workspace/repos" | tr '\n' ' ')")"
+  else
+    bad "no clean source workspace"
+    dim "  bash scripts/export-clean-source.sh"
+    sandbox_ok=false
+  fi
+
+  # Without the gateway the sandbox has no MCP at all: AWS, and later Rapid7 and
+  # the database, simply disappear. Better to say so than to hand the user an
+  # agent that silently cannot look anything up.
+  if [[ -f "$POC_ROOT/workspace/agent-state/mcp.json" ]] \
+     && grep -q '"url"' "$POC_ROOT/workspace/agent-state/mcp.json" 2>/dev/null; then
+    ok "MCP gateway configured  $(dim "$(python3 -c "
+import json; print(', '.join(json.load(open('$POC_ROOT/workspace/agent-state/mcp.json'))['mcpServers']))" 2>/dev/null)")"
+  else
+    bad "no gateway config for the sandbox"
+    dim "  bash scripts/toolhive-up.sh"
+    sandbox_ok=false
+  fi
+
+  if [[ "$sandbox_ok" != true ]]; then
+    bad "sandbox requested but prerequisites are missing"
+    exit 1
+  fi
+
+  SANDBOX_ENV=(NKB_AGENT_COMMAND="$POC_ROOT/scripts/agent-sandbox.sh")
+  ok "enabled  $(dim "Cursor runs in a container, product source mounted read-only")"
+else
+  dim "host mode  (NKB_SANDBOX=1 to run Cursor in the container instead)"
+fi
+
 heading "Agent Server:"
 mkdir -p "$LOG_DIR"
 
@@ -79,7 +134,11 @@ else
   # setsid puts the stack in its own process group, so stop.sh can terminate the
   # canvas, agent-server, and automation children together without guessing at
   # unrelated node/python processes on this machine.
-  LOCAL_BACKEND_API_KEY="$API_KEY" setsid nohup agent-canvas --port "$POC_PORT" \
+  # `env` rather than an assignment prefix: bash decides which leading words are
+  # assignments before expanding them, so a VAR=value word produced by array
+  # expansion is treated as the command name instead of an assignment.
+  setsid nohup env "LOCAL_BACKEND_API_KEY=$API_KEY" "${SANDBOX_ENV[@]}" \
+    agent-canvas --port "$POC_PORT" \
     > "$CANVAS_LOG" 2>&1 &
   echo $! > "$PID_FILE"
   ok "starting  $(dim "pid $(cat "$PID_FILE"), log runtime/logs/agent-canvas.log")"
