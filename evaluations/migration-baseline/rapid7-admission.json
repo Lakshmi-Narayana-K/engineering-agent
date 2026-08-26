@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-08-26T05:32:27Z",
+  "server": "gw-rapid7-insightidr",
+  "total": 14,
+  "failures": 0,
+  "checks": [
+    {"check":"upstream tool surface classified","state":"pass","detail":"64 read-only, 33 mutating or unannotated"},
+    {"check":"allowlist is read-only by derivation","state":"pass","detail":"55 exposed, all annotated readOnlyHint"},
+    {"check":"every allowlisted tool exists upstream","state":"pass","detail":"no unknown names"},
+    {"check":"mutating tool hidden: investigate_alerts","state":"pass","detail":"absent from tools/list"},
+    {"check":"mutating tool hidden: generate_alert_report","state":"pass","detail":"absent from tools/list"},
+    {"check":"mutating tool hidden: bulk_close_investigations","state":"pass","detail":"absent from tools/list"},
+    {"check":"mutating tool hidden: update_alert","state":"pass","detail":"absent from tools/list"},
+    {"check":"mutating tool hidden: set_investigation_status","state":"pass","detail":"absent from tools/list"},
+    {"check":"mutating tool hidden: delete_log","state":"pass","detail":"absent from tools/list"},
+    {"check":"mutating tool refused on call: investigate_alerts","state":"pass","detail":"gateway refused: tool not found"},
+    {"check":"mutating tool refused on call: bulk_close_investigations","state":"pass","detail":"gateway refused: tool not found"},
+    {"check":"mutating tool refused on call: delete_log","state":"pass","detail":"gateway refused: tool not found"},
+    {"check":"allowlisted tool admitted: list_investigations","state":"pass","detail":"reached the server, not refused"},
+    {"check":"tool calls audited","state":"pass","detail":"1 mcp_tool_call events"}
+  ]
+}

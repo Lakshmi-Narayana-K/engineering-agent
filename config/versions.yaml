@@ -160,3 +160,45 @@ aws_mcp_server:
   constraint: >
     The currently configured aws-api-mcp-server is deprecated. Verify the
     supported managed replacement against AWS documentation before adopting.
+
+rapid7_insightidr_mcp:
+  version: 0.1.0
+  commit: b059dcd
+  source: "github.com/rivaldofwijaya/R7-InsightIDR-MCP-Server (community, not Rapid7)"
+  license: see LICENSE in checkout
+  install: >
+    local checkout at runtime/mcp/r7-insightidr (gitignored), built into the
+    SYSTEM docker daemon:
+    DOCKER_HOST=unix:///var/run/docker.sock docker build
+      -f docker/rapid7-mcp/Dockerfile -t nkb-rapid7-mcp:0.1.0 runtime/mcp/r7-insightidr
+  owns: read-only InsightIDR lookups
+  security_boundary: >
+    ToolHive tool admission plus the Rapid7 API key scope. There is no
+    IAM-equivalent under our control here, which makes the key scope the only
+    backend-native boundary - see prerequisites below.
+  verified:
+    allowlist_derived_from_source: true   # 55 exposed, all readOnlyHint upstream
+    mutating_tools_refused_on_call: true
+    audit_events: true
+  caveats:
+    community_project: >
+      Version 0.1.0, single author, and no official Rapid7 InsightIDR MCP server
+      exists to replace it - Rapid7's own open-source MCP server covers Bulk
+      Export, not InsightIDR. The main alternative, solomonneas/rapid7-mcp, is
+      archived. So this is the best available rather than a vendor-supported
+      choice, and the mitigation is containment: restricted egress, derived
+      allowlist, audit, unprivileged container.
+    unannotated_tools_mutate: >
+      22 of its 97 tools carry no readOnlyHint annotation, and every one of them
+      mutates - including investigate_alerts and generate_alert_report. Any
+      name-based or annotation-absent-means-safe filter would admit them. The
+      allowlist is therefore derived positively from readOnlyHint=True.
+    api_key_scope_unverified: >
+      PREREQUISITE: the InsightIDR API key should be created read-only in the
+      Rapid7 console. Unlike the AWS path, where an IAM denial was tested
+      end to end, we have not proven the backend refuses a write - because the
+      only way to prove it is to attempt one against the live security
+      platform. Until that key is confirmed read-only, ToolHive admission is
+      the sole barrier.
+  upgrade: re-run tests/security/run-rapid7-tests.sh, which re-derives the allowlist
+  fallback: disable the server in config/toolhive/servers.yaml

@@ -158,10 +158,122 @@ servers:
   # Every tool needs individual review: names containing investigate, report,
   # search or analyze do not imply read-only.
   - name: rapid7-insightidr
-    enabled: false
+    # Enabled after tests/security/run-rapid7-tests.sh passed 14/14 against a
+    # running instance, recorded in
+    # evaluations/migration-baseline/rapid7-admission.json. The checks that
+    # justify the flag are the tools/call refusals: investigate_alerts,
+    # bulk_close_investigations and delete_log are refused by the gateway, not
+    # merely hidden from tools/list.
+    #
+    # It was added disabled and started for verification with
+    # NKB_TOOLHIVE_ONLY=rapid7-insightidr, so it was never exposed to the agent
+    # before those tests passed.
+    enabled: true
+    image: nkb-rapid7-mcp:0.1.0
+    proxy_port: 19107
+    transport: stdio
+    region: eu
     purpose: security investigation lookups
-    blocked_on: Phase 8 - containerise the local checkout, then review each tool
-    tools: []
+    authorization_boundary: >
+      ToolHive tool admission, plus the scope of the Rapid7 API key itself.
+      Unlike AWS there is no IAM-equivalent we control from here, so the key
+      must be created read-only in the Rapid7 console - see prerequisites.
+    credentials: toolhive environment secrets provider, INSIGHTIDR_API_KEY
+
+    # Built from a local checkout rather than a registry: the project is not
+    # published to PyPI, so there is no uvx:// scheme for ToolHive to resolve.
+    #   DOCKER_HOST=unix:///var/run/docker.sock docker build \
+    #     -f docker/rapid7-mcp/Dockerfile -t nkb-rapid7-mcp:0.1.0 \
+    #     runtime/mcp/r7-insightidr
+    # The DOCKER_HOST is not optional: ToolHive uses the system daemon, so an
+    # image built under the desktop-linux context is invisible to it.
+    build: docker/rapid7-mcp/Dockerfile
+
+    # The allowlist is DERIVED, not hand-written: every entry below carries
+    # readOnlyHint=True in the upstream source. That method matters here more
+    # than anywhere else in this file, because the server has 97 tools of which
+    # 22 carry no annotation at all - and all 22 mutate. Selecting by name would
+    # have admitted investigate_alerts and generate_alert_report, both of which
+    # write despite reading as read-only.
+    #
+    # 55 of the 64 read-only tools are exposed. The other 9 are omitted as
+    # unnecessary for investigation; each exposed tool costs prompt tokens.
+    #
+    # tests/security/run-rapid7-tests.sh re-derives this from source and fails
+    # if any exposed tool is not annotated read-only upstream.
+    tools:
+      - get_account
+      - get_alert
+      - get_alert_action_result
+      - get_alert_action_tasks
+      - get_alert_actions
+      - get_alert_actors
+      - get_alert_evidences
+      - get_alert_field
+      - get_alert_field_values
+      - get_alert_fields
+      - get_alert_process_tree
+      - get_alert_process_trees
+      - get_alerts_by_rrn
+      - get_asset
+      - get_audit_log
+      - get_audit_search_results
+      - get_comment
+      - get_detection_rule
+      - get_detection_rule_counts
+      - get_investigation
+      - get_leql_variable
+      - get_local_account
+      - get_log
+      - get_log_event_sources
+      - get_log_search_results
+      - get_log_topkeys
+      - get_logset
+      - get_next_log_search_page
+      - get_rule_exception
+      - get_saved_query
+      - get_search_stats
+      - get_user
+      - list_audit_logs
+      - list_audit_query_endpoints
+      - list_detection_rules
+      - list_investigation_alerts
+      - list_investigation_comments
+      - list_investigation_rapid7_product_alerts
+      - list_investigations
+      - list_leql_variables
+      - list_logs
+      - list_logsets
+      - list_rule_exceptions
+      - list_rule_exceptions_for_rule
+      - list_saved_queries
+      - run_log_search
+      - run_saved_query
+      - search_accounts
+      - search_alerts
+      - search_assets
+      - search_detection_rules
+      - search_local_accounts
+      - search_users
+      - start_audit_log_search
+      - start_log_search
+
+    excluded:
+      # All 11 tools annotated destructive, and all 22 unannotated mutating
+      # tools, are excluded by construction rather than by enumeration - the
+      # allowlist is a subset of the read-only set, so nothing else can appear.
+      # Named here are the ones whose names would otherwise invite exposure:
+      - investigate_alerts        # unannotated; creates an investigation
+      - generate_alert_report     # unannotated; writes a report artefact
+      - bulk_close_investigations # annotated destructive
+      - update_alert
+      - update_alerts
+      - set_investigation_status
+      - add_investigation_comment
+      - create_detection_rule
+      - delete_detection_rule
+      - delete_log
+      - delete_logset
 
   # Phase 7. Blocked on database prerequisites rather than on ToolHive: alpha
   # has no MySQL, no reachable network path and no read-only role.

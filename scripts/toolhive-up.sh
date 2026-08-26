@@ -31,10 +31,19 @@ CONFIG="$ROOT/config/toolhive/servers.yaml"
 
 # Tab-separated so tool lists and endpoints survive intact.
 mapfile -t ROWS < <(python3 - "$CONFIG" <<'PY'
-import sys, yaml
+import os, sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1]))
 for s in cfg.get("servers", []):
-    if not s.get("enabled"):
+    # ONLY names one server to start regardless of its enabled flag. This is the
+    # verification path: a new server is added disabled, started explicitly to
+    # run its abuse-case tests against, and only flipped to enabled once those
+    # pass. Without this the only way to test a server is to enable it first,
+    # which is the order section 7 forbids.
+    only = os.environ.get("NKB_TOOLHIVE_ONLY")
+    if only:
+        if s["name"] != only:
+            continue
+    elif not s.get("enabled"):
         continue
     tools = s.get("tools") or []
     if not tools:
@@ -43,7 +52,7 @@ for s in cfg.get("servers", []):
         continue
     print("\t".join([
         s["name"],
-        s.get("protocol") or s.get("registry") or s["name"],
+        s.get("protocol") or s.get("image") or s.get("registry") or s["name"],
         str(s.get("proxy_port", "")),
         ",".join(tools),
         s.get("transport", ""),
@@ -91,6 +100,32 @@ if c.has_section(p):
 PY
 )"
   [[ -n "${TOOLHIVE_SECRET_AWS_ACCESS_KEY_ID:-}" ]]
+}
+
+# Rapid7's key currently lives in the host Cursor MCP config, which is the only
+# place it exists today. Read here rather than copied into a second file, so
+# there is one source of truth; when the host config goes away this is the one
+# function that needs repointing.
+#
+# The point of doing this at all: after this change Cursor no longer holds the
+# Rapid7 credential. Only this container does, and its egress is restricted to
+# the Rapid7 API host.
+stage_rapid7_secrets() {
+  local cfg="$ROOT/.cursor/mcp.json"
+  [[ -f "$cfg" ]] || return 1
+  # Value is exported into this process only and never printed.
+  eval "$(python3 - "$cfg" <<'PYR7'
+import json, shlex, sys
+try:
+    env = json.load(open(sys.argv[1]))["mcpServers"]["insightidr"]["env"]
+except Exception:
+    sys.exit(0)
+key = env.get("INSIGHTIDR_API_KEY", "")
+if key and not key.startswith("${"):
+    print(f"export TOOLHIVE_SECRET_INSIGHTIDR_API_KEY={shlex.quote(key)}")
+PYR7
+)"
+  [[ -n "${TOOLHIVE_SECRET_INSIGHTIDR_API_KEY:-}" ]]
 }
 
 echo
@@ -141,7 +176,16 @@ for row in "${ROWS[@]}"; do
   # workload sits in "starting" while restarting with exit code 0.
   [[ -n "$transport" ]] && args+=(--transport "$transport")
 
-  if [[ "$needs_creds" == yes ]]; then
+  if [[ "$needs_creds" == yes && "$name" == rapid7-* ]]; then
+    if stage_rapid7_secrets; then
+      args+=(--permission-profile config/toolhive/rapid7-permissions.json)
+      args+=(--secret "INSIGHTIDR_API_KEY,target=INSIGHTIDR_API_KEY")
+      [[ -n "$region" ]] && args+=(--env "INSIGHTIDR_REGION=$region")
+    else
+      echo "  skipping         $workload (no INSIGHTIDR_API_KEY available)" >&2
+      continue
+    fi
+  elif [[ "$needs_creds" == yes ]]; then
     if stage_aws_secrets; then
       args+=(--permission-profile config/toolhive/aws-permissions.json)
       for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN; do
