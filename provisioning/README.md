@@ -189,6 +189,7 @@ is a network service rather than an AWS API:
 
 **Authorization** — IAM database authentication enabled on the cluster, plus a
 dedicated DB user. See [`db/agent-readonly-user.sql`](db/agent-readonly-user.sql).
+To prove this in alpha first, see [`db/alpha.md`](db/alpha.md).
 With IAM auth there is no database password anywhere; the agent generates a
 15-minute token.
 

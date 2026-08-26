@@ -1,0 +1,33 @@
+{
+  "$comment": [
+    "Network policy for the DBHub MCP container.",
+    "",
+    "Two destinations, both required, nothing else:",
+    "  - the Aurora READER endpoint on 3306, for the query itself",
+    "  - rds.<region>.amazonaws.com on 443, because aws_iam_auth generates the",
+    "    connection token through the AWS API rather than using a password",
+    "",
+    "The writer endpoint is deliberately absent. If the host below is ever",
+    "changed to one without `cluster-ro-` in it, the engine-level read-only",
+    "guarantee is gone and only the GRANTs remain - so pinning egress here is a",
+    "second place that has to be wrong before that can happen by accident.",
+    "",
+    "DBHub does not authenticate its own HTTP clients, which is why it is never",
+    "exposed beyond the ToolHive gateway on loopback. That is section 29's",
+    "requirement and this profile is what enforces the outbound half of it.",
+    "",
+    "Fill in the reader hostname after provisioning/db/alpha.md has been run;",
+    "until then this server stays disabled in servers.yaml."
+  ],
+  "read": [],
+  "network": {
+    "outbound": {
+      "insecure_allow_all": false,
+      "allow_host": [
+        "<CLUSTER>.cluster-ro-<SUFFIX>.ap-south-1.rds.amazonaws.com",
+        "rds.ap-south-1.amazonaws.com"
+      ],
+      "allow_port": [3306, 443]
+    }
+  }
+}

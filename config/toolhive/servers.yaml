@@ -275,14 +275,46 @@ servers:
       - delete_log
       - delete_logset
 
-  # Phase 7. Blocked on database prerequisites rather than on ToolHive: alpha
-  # has no MySQL, no reachable network path and no read-only role.
+  # Phase 7. Still disabled, but no longer blocked on the unknown part.
   #
-  # When it lands, the hard boundary is the database account, not this config.
-  # Pin a DBHub release unaffected by the known read-only bypass advisories.
+  # What was resolved on 2026-08-26: DBHub accepts an explicit database user,
+  # which awslabs.mysql-mcp-server does not - every one of its auth paths
+  # connects as master, which would have meant giving the agent the master
+  # password. DBHub's aws_iam_auth goes further and removes passwords entirely,
+  # generating a 15-minute RDS token for the named user, so nothing has to be
+  # stored or rotated. See config/dbhub.toml.
+  #
+  # What remains is provisioning, not design: an Aurora MySQL cluster in alpha,
+  # the nkb_agent_readonly user, and a network path to the reader endpoint.
+  # Requested from Rajesh 2026-08-26; steps in provisioning/db/alpha.md.
+  #
+  # The hard boundary is the reader endpoint and the GRANTs, not this config.
+  # ToolHive contributes tool admission and pinned egress only - which is worth
+  # stating plainly, because for AWS the equivalent boundary was IAM and here
+  # there is no AWS-side equivalent for the query itself.
   - name: dbhub
+    # Enable only after tests/security/run-db-tests.sh passes against a live
+    # cluster, including the ERROR 1290 check. A passing SELECT alone is not
+    # sufficient evidence - that proves plumbing, not a boundary.
     enabled: false
+    image: bytebase/dbhub
+    proxy_port: 19108
+    transport: stdio
     purpose: read-only SQL access for investigation
-    blocked_on: Phase 7 - database prerequisites, see knowledge/rds-access.md
-    tools: []
-    authorization_boundary: database read-only role, not ToolHive
+    blocked_on: alpha Aurora MySQL cluster - see provisioning/db/alpha.md
+    config: config/dbhub.toml
+    permissions: config/toolhive/db-permissions.json
+    credentials: >
+      none. aws_iam_auth generates an RDS token from the nkb-agent-alpha
+      profile, so no database password exists to inject.
+    # DBHub exposes a deliberately small surface - two tools - which is one
+    # reason it suits this. Confirm the exact names against the pinned release
+    # before enabling; ToolHive fails at startup on an unknown name, which is
+    # the desired behaviour rather than something to work around.
+    tools:
+      - execute_sql
+      - list_resources
+    authorization_boundary: >
+      Aurora reader endpoint (innodb_read_only) and the SELECT-only GRANTs on
+      nkb_agent_readonly. DBHub's readonly flag and max_rows are guardrails
+      above that, not the boundary.

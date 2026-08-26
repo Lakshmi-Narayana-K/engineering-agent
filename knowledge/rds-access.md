@@ -60,7 +60,7 @@ omitting it is read-only. The default is safe.
 ## What is implemented and verified
 
 Statement-level gating, under `mcp.sqlQuery` in `config/acp-permissions.json` and
-enforced by `evaluateSql()` in the shim. `runtime/mcp/sql-probe.mjs` is a stub
+enforced by `evaluateSql()` in `runtime/acp-policy-proxy/index.mjs`. `runtime/mcp/sql-probe.mjs` is a stub
 exposing the same shape a real SQL tool has — one `run_query` taking `sql` — so the
 gating can be exercised without a database. Tested end-to-end:
 
@@ -85,12 +85,23 @@ agent and a database, the database is configured wrong.
 - **A network path.** Either run the agent inside the VPC — which is the deployed ECS
   design and needs nothing extra — or connect the VPN for local work. Do not make an
   instance publicly accessible for it.
-- **A MySQL server that accepts an explicit user.** Needed to use
-  `nkb_agent_readonly` rather than master. A community server would put production
-  database credentials behind third-party code, so it warrants review before adoption;
-  a thin server of our own is a credible alternative given the surface is one method.
-- **A test database first.** A MySQL instance in alpha with the schema and no real
-  data would let the whole path be proven before any production credential exists.
+- ~~**A MySQL server that accepts an explicit user.**~~ **Resolved 2026-08-26:**
+  DBHub takes an explicit user, and its `aws_iam_auth` option goes further by
+  generating a 15-minute RDS token instead of using a password — so there is no
+  database credential to store anywhere. Configured in `config/dbhub.toml`;
+  registered but disabled in `config/toolhive/servers.yaml`.
+- **A test database first.** Requested from Rajesh on 2026-08-26 and confirmed:
+  production is Aurora MySQL with a writer and a reader instance, so alpha mirrors
+  that topology. Exact steps in [`../provisioning/db/alpha.md`](../provisioning/db/alpha.md).
+  It must be **Aurora with a reader instance**, not a single MySQL instance —
+  otherwise the `ERROR 1290` guarantee cannot be demonstrated and only the weaker
+  half of the boundary gets proven.
+
+- **A network path, still open.** The cluster will sit in private subnets like the
+  existing two. Either compute in the same VPC, VPN, or the Data API (enabled by
+  `--enable-http-endpoint`, but it has no reader routing and so cannot demonstrate
+  `ERROR 1290`). The useful combination is one of the first two *plus* the Data
+  API, so the query path and the reader guarantee can be proven independently.
 
 Worth deciding early, separately: every row returned is transmitted to an external
 model API. If learner PII must not leave the VPC, grant against masked views instead

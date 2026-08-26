@@ -1,0 +1,77 @@
+# DBHub — database MCP server configuration.
+#
+# WHY DBHUB AND NOT awslabs.mysql-mcp-server.
+#
+# The AWS server derives credentials from the cluster's managed MasterUserSecret
+# or authenticates as the cluster's MasterUsername. Every one of its connection
+# methods connects as master, and using it would mean granting the agent
+# secretsmanager:GetSecretValue on the master secret - so an agent designed to
+# hold read-only access would hold the master database password. That is a
+# privilege escalation, not an integration.
+#
+# DBHub takes an explicit user, which is what makes provisioning/db/
+# agent-readonly-user.sql meaningful: the database itself constrains the agent.
+#
+# WHERE THE REAL BOUNDARY IS.
+#
+# Not this file. The settings below are guardrails, and guardrails are things
+# our code applies - they can be misconfigured, and a bug can bypass them. The
+# boundary is, in order of strength:
+#
+#   1. The reader endpoint. Aurora replicas run innodb_read_only, so a write
+#      fails at the engine with ERROR 1290 regardless of grants, regardless of
+#      readonly below, and regardless of what the model asked for.
+#   2. The GRANTs. nkb_agent_readonly holds SELECT on one schema and nothing
+#      else - no mysql.*, no FILE, no EXECUTE, no DDL.
+#   3. rds-db:connect in IAM, scoped to this one database user.
+#
+# readonly and max_rows below are the fourth layer, useful for turning a
+# mistake into an error message instead of an incident. They are not the reason
+# this is safe.
+#
+# NO PASSWORD APPEARS HERE, BY CONSTRUCTION.
+# aws_iam_auth makes DBHub generate a 15-minute RDS token instead. There is no
+# database password to store, rotate or leak, and revoking the IAM permission
+# revokes database access immediately. This is why the individual host/user
+# fields are used rather than a dsn - a DSN encodes a password, and the moment
+# one exists it has to live somewhere.
+
+[[sources]]
+id = "alpha"
+type = "mysql"
+
+# The READER endpoint. Its hostname contains `cluster-ro-`; if what you paste
+# here does not, you are pointed at the writer and have silently given up the
+# strongest control in the design.
+host = "<CLUSTER>.cluster-ro-<SUFFIX>.ap-south-1.rds.amazonaws.com"
+port = 3306
+database = "nkb_agent_test"
+
+user = "nkb_agent_readonly"
+aws_iam_auth = true
+aws_region = "ap-south-1"
+aws_profile = "nkb-agent-alpha"
+
+# The user is created REQUIRE SSL, so a non-TLS connection is refused by the
+# server. Setting it here as well means the failure is a clear TLS error rather
+# than an authentication one. verify-ca and verify-full are PostgreSQL-only in
+# DBHub, so `require` is the strongest available for MySQL.
+sslmode = "require"
+
+# Short on purpose. A hanging connection during an investigation should surface
+# as a failure quickly rather than occupying a slot from the shared pool.
+connection_timeout = 10
+
+[[tools]]
+name = "execute_sql"
+source = "alpha"
+
+# Restricts execution to SELECT, SHOW, DESCRIBE, EXPLAIN.
+readonly = true
+
+# All three products share a single connection pool - there is no per-app
+# database routing in this codebase - so an unbounded result set degrades
+# backend, assessment and learning at once. This bounds the blast radius of one
+# careless query; MAX_USER_CONNECTIONS and MAX_QUERIES_PER_HOUR on the database
+# user bound the rest.
+max_rows = 1000

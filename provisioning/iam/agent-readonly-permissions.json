@@ -86,6 +86,12 @@
       "Resource": "*"
     },
     {
+      "Sid": "DbConnectAsReadOnlyUserOnly",
+      "Effect": "Allow",
+      "Action": "rds-db:connect",
+      "Resource": "arn:aws:rds-db:<REGION>:<ACCT>:dbuser:<CLUSTER_RESOURCE_ID>/nkb_agent_readonly"
+    },
+    {
       "Sid": "DenyEverythingNotListedAbove",
       "Effect": "Deny",
       "NotAction": [
@@ -123,7 +129,8 @@
         "states:GetExecutionHistory",
         "rds:DescribeDBClusters",
         "rds:DescribeDBInstances",
-        "rds:DescribeDBClusterEndpoints"
+        "rds:DescribeDBClusterEndpoints",
+        "rds-db:connect"
       ],
       "Resource": "*"
     }
