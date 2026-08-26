@@ -13,10 +13,16 @@ OpenHands Agent Canvas            (upstream, unmodified)
 OpenHands Agent Server            (upstream, unmodified)
    │  spawn + JSON-RPC over stdio
    ▼
-runtime/cursor/cursor-acp-shim.mjs   ← the only custom code in the path
+runtime/acp-policy-proxy/         ← permission decisions, audit, fail-closed
+   │                                  the only security-critical code we write
+   ▼
+runtime/cursor-compat-proxy/      ← cursor/* translation only (engine-specific)
    │
    ▼
-cursor CLI `agent acp`            (ask mode: read-only)
+scripts/agent-sandbox.sh          ← container boundary
+   │
+   ▼
+cursor CLI `agent acp`            (ask mode: read-only, in the sandbox)
    │
    ▼
 repos/nkb_backend · repos/nkb_assessment_backend · repos/nkb_learning_backend
@@ -73,7 +79,10 @@ repos/                     symlinks to the three real checkouts (read-only)
 config/                    repos, engine, and policy configuration
 context/                   machine-readable service + system metadata
 knowledge/                 generated human-readable findings, with evidence
-runtime/cursor/            ACP shim, raw ACP probe, Git baselines
+runtime/acp-policy-proxy/  permission decisions, audit, fail-closed
+runtime/cursor-compat-proxy/  cursor/* -> Canvas translation
+runtime/acp-proxy/         shared transparent relay used by both
+runtime/cursor/            raw ACP probe, Git baselines
 runtime/smoke-test.py      end-to-end test through Agent Server
 scripts/                   bootstrap, start, stop, status, integrity verification
 evaluations/               question set, grading format, results
@@ -91,7 +100,7 @@ So the wiring is configuration, not code:
 ```yaml
 agent_kind: acp
 acp_server: custom
-acp_command: [node, <poc>/runtime/cursor/cursor-acp-shim.mjs, acp]
+acp_command: [node, <poc>/runtime/acp-policy-proxy/index.mjs, acp]
 acp_session_mode: ask
 ```
 
@@ -109,7 +118,7 @@ Agent Server answers unknown extension methods with an empty `{}` (its
 reaches the browser — so a clarifying question from Cursor would be silently
 swallowed.
 
-`runtime/cursor/cursor-acp-shim.mjs` sits between the two and does the minimum:
+`runtime/cursor-compat-proxy/index.mjs` sits between the two and does the minimum:
 
 - forwards all standard ACP traffic byte-for-byte
 - intercepts `cursor/*` methods, renders their payload as a normal

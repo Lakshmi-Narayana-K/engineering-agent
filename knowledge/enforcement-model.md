@@ -108,9 +108,9 @@ one remained attached.
 
 ## The control that does work
 
-**The ACP shim adjudicates every permission request.**
+**The ACP policy proxy adjudicates every permission request.**
 
-`runtime/cursor/cursor-acp-shim.mjs` sits between Agent Server and `agent acp` and sees
+`runtime/acp-policy-proxy/index.mjs` sits between Agent Server and `agent acp` and sees
 every `session/request_permission`. Previously it forwarded them to Agent Server, which
 auto-approves unconditionally — that is why `aws` ran. It now evaluates each request
 against `config/acp-permissions.json` and answers directly, so the outcome does not

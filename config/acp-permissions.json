@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "Policy enforced by runtime/cursor/cursor-acp-shim.mjs on every ACP",
+    "Policy enforced by runtime/acp-policy-proxy/index.mjs on every ACP",
     "session/request_permission. This is the real enforcement point for this",
     "workspace - see knowledge/enforcement-model.md for why .cursor/cli.json and",
     "session mode `ask` are NOT sufficient on their own.",

@@ -87,11 +87,11 @@ for repo in "${REPOS[@]}"; do
   ok "$repo  $(dim "branch=$(git -C "$path" rev-parse --abbrev-ref HEAD) dirty=$(wc -l < "${BASELINE_DIR}/${repo}.porcelain")")"
 done
 
-heading "ACP shim"
+heading "ACP proxy chain"
 if [[ -f "$SHIM" ]]; then
-  ok "runtime/cursor/cursor-acp-shim.mjs present"
+  ok "runtime/acp-policy-proxy + runtime/cursor-compat-proxy present"
 else
-  bad "ACP shim missing at $SHIM"
+  bad "ACP policy proxy missing at $SHIM"
   failures=$((failures + 1))
 fi
 

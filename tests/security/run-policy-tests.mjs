@@ -23,7 +23,14 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
 const CASES = path.join(HERE, "policy-cases.json");
-const SHIM = path.join(ROOT, "runtime", "cursor", "cursor-acp-shim.mjs");
+/*
+ * Defaults to the proxy chain. NKB_ACP_ENTRY runs the same cases against the
+ * legacy single-file shim instead, which is how parity between the two was
+ * established before the chain became the default - section 7 asks for the
+ * replacement to be proven against the same tests, not merely to pass its own.
+ */
+const SHIM =
+  process.env.NKB_ACP_ENTRY || path.join(ROOT, "runtime", "acp-policy-proxy", "index.mjs");
 
 const jsonFlag = process.argv.indexOf("--json");
 const jsonOut = jsonFlag === -1 ? null : process.argv[jsonFlag + 1];

@@ -40,7 +40,7 @@ filesystem:
 
 controls:
   - id: shim-policy
-    control: runtime/cursor/cursor-acp-shim.mjs enforces config/acp-permissions.json
+    control: runtime/acp-policy-proxy/index.mjs enforces config/acp-permissions.json
     enforcement: ENFORCED
     by: the shim itself
     detail: >-

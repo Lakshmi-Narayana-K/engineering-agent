@@ -18,7 +18,18 @@ PID_FILE="${POC_ROOT}/runtime/agent-canvas.pid"
 LOG_DIR="${POC_ROOT}/runtime/logs"
 CANVAS_LOG="${LOG_DIR}/agent-canvas.log"
 BASELINE_DIR="${POC_ROOT}/runtime/cursor/baseline"
-SHIM="${POC_ROOT}/runtime/cursor/cursor-acp-shim.mjs"
+# Entry point of the ACP proxy chain:
+#
+#   Agent Server -> acp-policy-proxy -> cursor-compat-proxy -> agent-sandbox.sh
+#                                                                  -> Cursor
+#
+# The policy proxy is first because it must see every message, and last to be
+# influenced by anything downstream. Each link spawns the next, so only this
+# path is configured anywhere.
+#
+# NKB_ACP_ENTRY overrides it, which is the rollback to the single-file shim
+# that preceded the split. Kept working until the chain has run in daily use.
+SHIM="${NKB_ACP_ENTRY:-${POC_ROOT}/runtime/acp-policy-proxy/index.mjs}"
 
 REPOS=(nkb_backend nkb_assessment_backend nkb_learning_backend)
 

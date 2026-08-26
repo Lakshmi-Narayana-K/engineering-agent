@@ -1,9 +1,11 @@
 # Agent engine configuration for V0.
 #
-# Architecture:  Browser -> Agent Canvas -> Agent Server -> ACP shim -> `agent acp`
+# Architecture:  Browser -> Agent Canvas -> Agent Server -> ACP policy proxy
+#                -> Cursor compat proxy -> agent-sandbox.sh -> `agent acp`
 #
 # Agent Canvas and Agent Server are upstream OpenHands components used as-is. The
-# only custom code in the path is runtime/cursor/cursor-acp-shim.mjs.
+# only custom code in the path is runtime/acp-policy-proxy (permission decisions)
+# and runtime/cursor-compat-proxy (cursor/* translation, engine-specific).
 #
 # scripts/start.sh applies the `agent_settings` block below to the running Agent
 # Server via PATCH /api/settings. Editing this file changes the deployed config.
@@ -57,7 +59,7 @@ agent_settings:
   acp_server: custom          # Cursor is not a built-in OpenHands provider
   acp_command:
     - node
-    - "{{POC_ROOT}}/runtime/cursor/cursor-acp-shim.mjs"
+    - "{{POC_ROOT}}/runtime/acp-policy-proxy/index.mjs"
     - acp
   acp_args: []
   acp_model: null             # let Cursor use its own default (Auto)

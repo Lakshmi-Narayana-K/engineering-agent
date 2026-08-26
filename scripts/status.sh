@@ -26,9 +26,9 @@ else
 fi
 
 if [[ -f "$SHIM" ]]; then
-  ok "ACP shim       present"
+  ok "ACP proxy     present"
 else
-  bad "ACP shim       missing"
+  bad "ACP proxy     missing"
 fi
 
 heading "Engine configuration"
