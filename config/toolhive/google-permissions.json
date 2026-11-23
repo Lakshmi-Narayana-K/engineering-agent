@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "Network policy for the Google Sheets MCP container.",
+    "",
+    "This container holds a Google service account private key. Unlike the AWS",
+    "path, where the credential is a short-lived STS session, this key does not",
+    "expire - it is valid until revoked by hand. So the argument for pinning",
+    "egress is stronger here than anywhere else in this directory: if the server",
+    "or one of its dependencies is compromised, a non-expiring credential with",
+    "nowhere to go is a much smaller problem than one that can reach the",
+    "internet.",
+    "",
+    "Two hosts, and why only two:",
+    "  oauth2.googleapis.com  - the service account signs a JWT locally and",
+    "                           exchanges it here for an access token. Without",
+    "                           this host nothing authenticates.",
+    "  sheets.googleapis.com  - the Sheets v4 API itself. Every exposed tool",
+    "                           talks to this and only this.",
+    "",
+    "Notably absent: www.googleapis.com, which is where the Drive API lives.",
+    "mcp-gsheets has no Drive tools, so nothing should ever try to reach it, and",
+    "leaving it out means a future Drive dependency fails loudly here instead of",
+    "quietly working. Add it only alongside a deliberate decision to let the",
+    "agent enumerate spreadsheets.",
+    "",
+    "NOT the authorization boundary, and the distinction matters more here than",
+    "for Rapid7. What the agent may DO to a spreadsheet is decided by how that",
+    "spreadsheet is shared with the service account. Shared as Viewer, a write",
+    "is refused by Google regardless of what tool was called. Shared as Editor,",
+    "cell update tools may change that spreadsheet. ToolHive still excludes",
+    "create-spreadsheet, clear, and formatting tools; the share list is the scope."
+  ],
+  "read": [],
+  "network": {
+    "outbound": {
+      "insecure_allow_all": false,
+      "allow_host": [
+        "oauth2.googleapis.com",
+        "sheets.googleapis.com"
+      ],
+      "allow_port": [443]
+    }
+  }
+}

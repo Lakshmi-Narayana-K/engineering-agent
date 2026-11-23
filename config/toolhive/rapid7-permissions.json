@@ -26,7 +26,9 @@
     "outbound": {
       "insecure_allow_all": false,
       "allow_host": [
-        "eu.api.insight.rapid7.com"
+        "eu.api.insight.rapid7.com",
+        "eu.rest.logs.insight.rapid7.com",
+        "rest.logs.insight.rapid7.com"
       ],
       "allow_port": [443]
     }

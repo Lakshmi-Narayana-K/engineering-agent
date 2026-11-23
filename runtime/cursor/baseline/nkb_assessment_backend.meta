@@ -1,6 +1,6 @@
 repo=nkb_assessment_backend
 path=/home/nxtwave/Desktop/CodeBase-HUB/nkb_assessment_backend
-branch=feat-practice-gamification-jatin
-head=abab92d6029e6588d0a64085f92cc08cbc4e0c03
-stashes=4
-captured_at=2026-08-25T11:13:30+05:30
+branch=development
+head=4b60d18346d5b982b06f5c790879e0205b4a762a
+stashes=11
+captured_at=2026-09-25T12:09:14+05:30

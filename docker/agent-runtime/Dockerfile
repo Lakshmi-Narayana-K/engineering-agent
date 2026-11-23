@@ -32,14 +32,21 @@ FROM node:${NODE_VERSION}
 ARG CURSOR_VERSION=2026.08.11-e8db854
 ARG TARGETARCH=amd64
 
+# Cursor spawns /usr/bin/bash for shell tool calls; bookworm-slim + this list
+# used to omit bash entirely, which produced spawn ... ENOENT and blocked
+# django-prod-shell and every other terminal command.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        bash \
         ca-certificates \
         curl \
         git \
-        procps; \
-    rm -rf /var/lib/apt/lists/*
+        procps \
+        python3 \
+        python3-minimal; \
+    rm -rf /var/lib/apt/lists/*; \
+    test -x /usr/bin/bash || test -x /bin/bash
 
 # git is present so the agent can read repository metadata, not write it. The
 # workspace is mounted read-only, so fetch/push have nothing to act on.

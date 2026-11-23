@@ -46,6 +46,18 @@ id_ecdsa*
 .pypirc
 .netrc
 
+# Terraform state and variable files. Added with ccbp-ide-drops-infra. State
+# stores every attribute of every resource in plaintext, including generated
+# passwords and connection strings, and tfvars is where the inputs to those
+# resources are written. Neither is tracked in that repository today; these
+# patterns are here so it stays that way by accident as well as on purpose.
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform
+.terraform/*
+
 # Local developer and IDE state: no value to an investigation, and a common
 # place for tokens and absolute paths to leak.
 .idea

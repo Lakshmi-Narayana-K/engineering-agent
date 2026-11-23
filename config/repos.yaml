@@ -4,8 +4,13 @@
 # not be modified by it. `repos/<name>` is a symlink to `local_path`.
 #
 # `baseline` records the Git state captured at POC setup time. It is what
-# scripts/verify-product-repos-untouched.sh compares against. All three repos
-# were already dirty at capture; the check asserts "no new changes", not "clean".
+# scripts/verify-product-repos-untouched.sh compares against. Every repo was
+# already dirty at capture; the check asserts "no new changes", not "clean".
+#
+# The bash-side list lives in scripts/_common.sh (REPOS and REPO_SOURCES), which
+# bootstrap, the clean export and the baseline check all read. This file is the
+# human-facing manifest: what each repository is, where its documentation lives,
+# and what state it was in when it was linked.
 
 version: 1
 
@@ -60,6 +65,76 @@ repositories:
         - nkb_learning_path/docs
         - apidoc.json
         - add_records_oas.json
+
+  # --- Drops -----------------------------------------------------------------
+  #
+  # The IDE Drops product, added 2026-09-02. Two repositories rather than one
+  # because the runtime infrastructure and the UI are deployed separately, and a
+  # question about a Drops session usually starts in one and ends in the other.
+  #
+  # Different shape from the NKB backends, which is worth stating before someone
+  # investigates here expecting Django: the frontend is Create React App with
+  # craco, and the infra repo is a flat Python service plus the Dockerfiles for
+  # each IDE language runtime. The clean-architecture layer table in
+  # .cursor/rules applies to neither.
+
+  - name: ccbp-ide-drops-frontend
+    local_path: /home/nxtwave/Desktop/CodeBase-HUB/Drops/ccbp-ide-drops-frontend
+    link: repos/ccbp-ide-drops-frontend
+    access: read-only
+    remote: ssh://git-codecommit.ap-south-1.amazonaws.com/v1/repos/ccbp-ide-drops-frontend
+    baseline:
+      branch: beta
+      head: 3870ecb90d6994b1904b003812c1f83b4f4d2f28
+      dirty_entries: 2
+      captured_at: "2026-09-02T11:55:00+05:30"
+    documentation:
+      project_docs: null
+      other: []
+    export_note: >
+      Tracks .env, .env.alpha and .env.prod. All three are committed with real
+      values and all three are removed by the .env and .env.* patterns in
+      config/workspace-exclude.txt, which the export asserts rather than
+      assumes. This is the exact case those patterns were written for.
+
+  - name: ccbp-ide-drops-infra
+    local_path: /home/nxtwave/Desktop/CodeBase-HUB/Drops/ccbp-ide-drops-infra
+    link: repos/ccbp-ide-drops-infra
+    access: read-only
+    remote: ssh://git-codecommit.ap-south-1.amazonaws.com/v1/repos/ccbp-ide-drops-infra
+    baseline:
+      branch: ml-enum-dev-lakshmi
+      head: d8da0537040b84287a6ba590d9bb3c779c0f4fc6
+      dirty_entries: 4
+      captured_at: "2026-09-02T11:55:00+05:30"
+    documentation:
+      project_docs: null
+      other: []
+    export_note: >
+      Audited before linking. The one file that reads like a credential file,
+      ide_drops_infra_backend/deployment/env_vars.sh, holds internal hostnames
+      and port numbers only - no keys, no passwords - so it is exported rather
+      than excluded, because it is genuinely useful for tracing how the runtime
+      is wired. No Terraform state is tracked; exclusion patterns for it were
+      added anyway, since infra repositories tend to acquire it later.
+
+  - name: kossip-web
+    local_path: /home/nxtwave/Desktop/CodeBase-HUB/kossip-web
+    link: repos/kossip-web
+    access: read-only
+    remote: git@github-nxtwave:nxtwave-tech/learning-platform-web.git
+    baseline:
+      branch: development
+      head: 73aba6a42bda39465099f913070d1975887e1dcf
+      dirty_entries: 1
+      captured_at: "2026-09-23T16:10:00+05:30"
+    documentation:
+      project_docs: null
+      other: []
+    export_note: >
+      Yarn workspaces monorepo (turbo, apps/*, packages/*). node_modules is excluded
+      by config/workspace-exclude.txt. Not part of the composed Django deployment;
+      pairs with NKB APIs for learner-facing UI.
 
 notes:
   - The repository is spelled `nkb_assessment_backend` (not `nkb_assessement_backend`).

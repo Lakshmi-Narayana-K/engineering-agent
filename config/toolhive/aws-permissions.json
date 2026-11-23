@@ -32,6 +32,8 @@
         "aws-mcp.us-east-1.api.aws",
         "sts.amazonaws.com",
         "sts.ap-south-1.amazonaws.com",
+        "logs.ap-south-1.amazonaws.com",
+        "monitoring.ap-south-1.amazonaws.com",
         "pypi.org",
         "files.pythonhosted.org"
       ],

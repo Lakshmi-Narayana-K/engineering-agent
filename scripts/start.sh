@@ -43,6 +43,8 @@ if [[ -s "${POC_ROOT}/runtime/cursor/api-key" ]]; then
   mkdir -p "${CURSOR_HOME}/.cursor"
   cp "${POC_ROOT}/.cursor/mcp.json" "${POC_ROOT}/.cursor/cli.json" \
      "${CURSOR_HOME}/.cursor/" 2>/dev/null || true
+  mkdir -p "${POC_ROOT}/workspace/agent-state"
+  cp "${POC_ROOT}/.cursor/cli.json" "${POC_ROOT}/workspace/agent-state/cli.json" 2>/dev/null || true
   chmod -R go-rwx "$CURSOR_HOME" 2>/dev/null || true
 
   declared="$(python3 -c '
@@ -58,6 +60,8 @@ with open(sys.argv[1]) as fh:
       bad "could not approve MCP server: $server"
     fi
   done
+
+  approve_sandbox_mcp_servers
 else
   bad "runtime/cursor/api-key is missing or empty"
   dim "  Without it HOME cannot be isolated, so the agent would fall back to"
@@ -96,11 +100,12 @@ fi
 
 sandbox_ok=true
 
-if docker image inspect "${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}" >/dev/null 2>&1; then
-  ok "image built  $(dim "${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}")"
+AGENT_IMAGE="${NKB_AGENT_IMAGE:-nkb-agent-runtime:2026.08.11-e8db854}"
+if bash "$POC_ROOT/scripts/ensure-sandbox-image.sh"; then
+  ok "image built  $(dim "$AGENT_IMAGE")"
 else
-  bad "sandbox image missing"
-  dim "  docker build -t nkb-agent-runtime:2026.08.11-e8db854 docker/agent-runtime"
+  bad "sandbox image unavailable"
+  dim "  docker build -t $AGENT_IMAGE docker/agent-runtime"
   sandbox_ok=false
 fi
 
@@ -154,7 +159,15 @@ if [[ "$sandbox_ok" != true ]]; then
   exit 1
 fi
 
-SANDBOX_ENV=(NKB_AGENT_COMMAND="$POC_ROOT/scripts/agent-sandbox.sh")
+# openhands-agent-server 1.42.1 passes Query(..., lte=100) in bash_router.py,
+# which FastAPI >=0.150 rejects with TypeError. UV_CONSTRAINT splits on spaces,
+# so the file must live at a space-free path outside "Agentic Workflows".
+UV_CONSTRAINT_FILE="/tmp/nkb-agent-uv-constraints.txt"
+printf 'fastapi<0.150\n' > "$UV_CONSTRAINT_FILE"
+SANDBOX_ENV=(
+  NKB_AGENT_COMMAND="$POC_ROOT/scripts/agent-sandbox.sh"
+  UV_CONSTRAINT="$UV_CONSTRAINT_FILE"
+)
 ok "enabled  $(dim "Cursor runs in a container, product source mounted read-only")"
 
 heading "Agent Server:"
@@ -174,8 +187,10 @@ else
   # `env` rather than an assignment prefix: bash decides which leading words are
   # assignments before expanding them, so a VAR=value word produced by array
   # expansion is treated as the command name instead of an assignment.
+  CANVAS_ARGS=(--port "$POC_PORT")
+  [[ "${NKB_CANVAS_PUBLIC:-}" == 1 ]] && CANVAS_ARGS+=(--public)
   setsid nohup env "LOCAL_BACKEND_API_KEY=$API_KEY" "${SANDBOX_ENV[@]}" \
-    agent-canvas --port "$POC_PORT" \
+    agent-canvas "${CANVAS_ARGS[@]}" \
     > "$CANVAS_LOG" 2>&1 &
   echo $! > "$PID_FILE"
   ok "starting  $(dim "pid $(cat "$PID_FILE"), log runtime/logs/agent-canvas.log")"
@@ -209,23 +224,32 @@ heading "Cursor ACP provider:"
 # acp_command is an argv array; the shim path contains a space, so build the
 # JSON with python rather than string interpolation.
 patch_body="$(python3 - "$SHIM" <<'PY'
-import json, sys
+import json, os, sys
 print(json.dumps({"agent_settings_diff": {
     "agent_kind": "acp",
     "acp_server": "custom",
     "acp_command": ["node", sys.argv[1], "acp"],
     "acp_args": [],
-    "acp_session_mode": "ask",
+    "acp_session_mode": os.environ.get("NKB_ACP_SESSION_MODE", "ask"),
     "acp_prompt_timeout": 900.0,
     "acp_startup_timeout": 120.0,
 }}))
 PY
 )"
 
+ACP_MODE="${NKB_ACP_SESSION_MODE:-ask}"
+case "$ACP_MODE" in
+  ask|agent) ;;
+  *)
+    bad "NKB_ACP_SESSION_MODE must be ask or agent (got: $ACP_MODE)"
+    exit 1
+    ;;
+esac
+
 if api PATCH /api/settings -H "Content-Type: application/json" -d "$patch_body" >/dev/null; then
   kind="$(api GET /api/settings | python3 -c 'import json,sys; print(json.load(sys.stdin)["agent_settings"]["agent_kind"])')"
   if [[ "$kind" == "acp" ]]; then
-    ok "registered  $(dim "agent_kind=acp, acp_server=custom, mode=ask")"
+    ok "registered  $(dim "agent_kind=acp, acp_server=custom, default_mode=$ACP_MODE")"
   else
     bad "settings applied but agent_kind is '$kind'"
     exit 1
@@ -235,48 +259,59 @@ else
   exit 1
 fi
 
-heading "Agent profile:"
+heading "Agent profiles (ask + agent):"
 # Settings alone are not enough for the browser UI. The composer is gated on the
 # *active agent profile*, and the stock 'default' profile is agent_kind=openhands,
-# which demands an LLM API key we deliberately do not set. Publishing an ACP
-# profile and activating it is what unblocks typing in the UI.
+# which demands an LLM API key we deliberately do not set. Two profiles let users
+# switch Cursor session mode in Canvas without restarting the host.
 #
 # Note the profile schema differs from the settings schema: here acp_command is a
 # single string, so the shim path (which contains a space) goes in acp_args.
-profile_body="$(python3 - "$SHIM" <<'PY'
+ACTIVE_PROFILE="nkb-investigator-${ACP_MODE}"
+profile_publish_failed=0
+for mode in ask agent; do
+  name="nkb-investigator-${mode}"
+  profile_body="$(python3 - "$SHIM" "$mode" <<'PY'
 import json, sys
+mode = sys.argv[2]
 print(json.dumps({
     "schema_version": 2,
-    "name": "nkb-investigator",
+    "name": f"nkb-investigator-{mode}",
     "agent_kind": "acp",
     "acp_server": "custom",
     "acp_command": "node",
     "acp_args": [sys.argv[1], "acp"],
     "acp_model": None,
-    "acp_session_mode": "ask",
+    "acp_session_mode": mode,
     "acp_prompt_timeout": 900.0,
     "acp_startup_timeout": 120.0,
     "mcp_server_refs": None,
 }))
 PY
 )"
-
-if api POST /api/agent-profiles/nkb-investigator \
-     -H "Content-Type: application/json" -d "$profile_body" >/dev/null; then
-  profile_id="$(api GET /api/agent-profiles | python3 -c '
-import json, sys
-for p in json.load(sys.stdin)["profiles"]:
-    if p["name"] == "nkb-investigator":
-        print(p["id"]); break
-')"
-  if [[ -n "$profile_id" ]] && api POST "/api/agent-profiles/${profile_id}/activate" >/dev/null; then
-    ok "activated  $(dim "nkb-investigator (agent_kind=acp)")"
+  if api POST "/api/agent-profiles/${name}" \
+       -H "Content-Type: application/json" -d "$profile_body" >/dev/null; then
+    ok "published  $(dim "$name (acp_session_mode=$mode)")"
   else
-    bad "profile saved but could not be activated"
-    exit 1
+    bad "failed to publish $name"
+    profile_publish_failed=1
   fi
+done
+if [[ $profile_publish_failed -ne 0 ]]; then
+  exit 1
+fi
+
+profile_id="$(api GET /api/agent-profiles | python3 -c "
+import json, sys
+target = sys.argv[1]
+for p in json.load(sys.stdin)[\"profiles\"]:
+    if p[\"name\"] == target:
+        print(p[\"id\"]); break
+" "$ACTIVE_PROFILE")"
+if [[ -n "$profile_id" ]] && api POST "/api/agent-profiles/${profile_id}/activate" >/dev/null; then
+  ok "activated  $(dim "$ACTIVE_PROFILE (switch the other profile in Canvas anytime)")"
 else
-  bad "failed to publish the nkb-investigator agent profile"
+  bad "profiles saved but could not activate $ACTIVE_PROFILE"
   exit 1
 fi
 

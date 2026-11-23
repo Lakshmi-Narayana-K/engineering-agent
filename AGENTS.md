@@ -19,6 +19,7 @@ independently deployed network services. They are one composed Django applicatio
 | `repos/nkb_backend` | The **composition root**. The deployable. Owns settings, the root URLconf, the database config, and every Lambda/ECS/SQS entry point. |
 | `repos/nkb_assessment_backend` | A **library of Django apps** published as a pip package and installed *into* `nkb_backend`. Exams, questions, assessments, coding practice. |
 | `repos/nkb_learning_backend` | A **library of Django apps**, same arrangement. Content tree, courses, cohorts, learner progress, auth. |
+| `repos/kossip-web` | **Learner-facing web monorepo** (Yarn workspaces / turbo, `apps/*`, `packages/*`). Calls NKB HTTP APIs; not installed into `nkb_backend`. |
 
 Both library repos also carry their own `zappa_settings.json` for a legacy standalone
 deployment, so each looks self-contained at first glance. Do not be misled by that.
@@ -120,15 +121,32 @@ first time you use them. Skip the ceremony for simple factual questions — just
 
 ## Boundaries
 
-This workspace reasons about **source code only**. There is no runtime access.
+Default posture is **read the code first**. When MCP tools are available on this host,
+you may also use governed runtime access (AWS APIs, prod DB reader, Google Sheets, and
+similar) instead of shelling into credentials on disk.
 
-- Do not query AWS. References to S3, SQS, SNS, Lambda, or CloudWatch in the code are
-  *source references*; you can report that the code references them, never their live
-  state.
-- Do not connect to any database. You can describe models and schema from code; you
-  cannot report what data exists.
-- Do not call production or staging services, and do not resolve or curl URLs found
-  in settings.
+- **Production database rows:** use **`django-prod-shell`** (sources `env_prod.sh`).
+- **Beta database rows:** use **`django-beta-shell`** (sources `env_beta.sh`). Same
+  codebase under `repos/nkb_backend`; only env + data differ. Both are read-only and
+  enabled when the host was started with `start-local-shared.sh`. Examples:
+  `django-prod-shell -c '...'` / `django-beta-shell -c '...'`, or
+  `django-prod-shell -f /workspace/generated/query.py` (or `-beta-shell` for beta).
+  Raw `python`, `poetry`, and `source env_*.sh` in the terminal stay blocked.
+  On very large prod tables, never run a bare `.count()`; see
+  `.cursor/rules/15-prod-database-reads.mdc`.
+- **Prod dry-run scripts:** if you or the user produce Django code with **`DRY_RUN =
+  True`**, write it to `/workspace/generated/` and run **`django-prod-shell -f`** or
+  **`django-beta-shell -f`** matching the target environment. **Never** run with
+  `DRY_RUN = False` or apply deletes/updates on prod/beta here.
+- **Ask vs agent (Canvas):** two presets are published — **`nkb-investigator-ask`**
+  (read-only Cursor session: no shell) and **`nkb-investigator-agent`** (shell +
+  `django-prod-shell` / `django-beta-shell`). Users switch via the agent **profile**
+  picker in Canvas; start a **new conversation** after switching so ACP applies
+  `session/set_mode`. Host default on shared start is `agent` (`NKB_ACP_SESSION_MODE`).
+- **AWS live state:** use the `aws-api` MCP tools, not the AWS CLI in the terminal.
+- When a capability is not configured (django shells missing, gateway down), say so and
+  answer from code and schema only; do not guess row counts or live resource state.
+- Do not call arbitrary production HTTP endpoints or curl URLs from settings.
 - Environment files (`env.encrypted`, `env_prod.sh`, `env_beta.sh`) are configuration
   evidence. Report variable **names**; never report or exfiltrate secret values.
 

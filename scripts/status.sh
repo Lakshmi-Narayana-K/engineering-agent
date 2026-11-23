@@ -45,8 +45,68 @@ print(f"  acp_session_mode {s.get('acp_session_mode')}")
 print(f"  acp_model        {s.get('acp_model') or '(cursor default)'}")
 print(f"  acp_command      {' '.join(s.get('acp_command') or []) or '(unset)'}")
 PY
+  profiles="$(api GET /api/agent-profiles 2>/dev/null)"
+  if [[ -n "$profiles" ]]; then
+    python3 - <<PY
+import json
+data = json.loads('''$profiles''')
+active = data.get("active_profile_id")
+for p in data.get("profiles", []):
+    mark = " (active)" if p.get("id") == active else ""
+    mode = p.get("acp_session_mode") or "?"
+    if p.get("name", "").startswith("nkb-investigator"):
+        print(f"  profile          {p['name']}  mode={mode}{mark}")
+PY
+  fi
 else
   bad "could not read /api/settings"
+fi
+
+heading "Shared read-only DB (start-local-shared)"
+if [[ -f "${POC_ROOT}/runtime/.prod-django-shell-enabled" ]]; then
+  ok "prod django     enabled"
+else
+  dim "  prod django shell not enabled"
+fi
+if [[ -f "${POC_ROOT}/runtime/.beta-django-shell-enabled" ]]; then
+  ok "beta django     enabled"
+else
+  dim "  beta django shell not enabled"
+fi
+if [[ -f "${POC_ROOT}/runtime/.prod-django-shell-enabled" || -f "${POC_ROOT}/runtime/.beta-django-shell-enabled" ]]; then
+  if [[ -f "${POC_ROOT}/runtime/django-prod-worker.pid" ]] \
+     && kill -0 "$(cat "${POC_ROOT}/runtime/django-prod-worker.pid")" 2>/dev/null; then
+    ok "host worker     running  $(dim "pid $(cat "${POC_ROOT}/runtime/django-prod-worker.pid")")"
+    if bash "${POC_ROOT}/scripts/django-prod-ping.sh" prod >/dev/null 2>&1; then
+      ok "host worker     prod ping OK"
+    else
+      bad "host worker     prod ping failed (VPN, env_prod, or venv?)"
+    fi
+    if [[ -f "${POC_ROOT}/runtime/.beta-django-shell-enabled" ]]; then
+      if bash "${POC_ROOT}/scripts/django-prod-ping.sh" beta >/dev/null 2>&1; then
+        ok "host worker     beta ping OK"
+      else
+        bad "host worker     beta ping failed (VPN, env_beta, or venv?)"
+      fi
+    fi
+  else
+    bad "host worker     not running"
+  fi
+fi
+
+mcp="${POC_ROOT}/workspace/agent-state/mcp.json"
+if [[ -f "$mcp" ]] && python3 -c 'import json,sys; exit(0 if "dbhub" in json.load(open(sys.argv[1])).get("mcpServers",{}) else 1)' "$mcp" 2>/dev/null; then
+  THV="${POC_ROOT}/runtime/toolhive/bin/thv"
+  if XDG_CONFIG_HOME="${POC_ROOT}/runtime/toolhive/config" \
+     XDG_DATA_HOME="${POC_ROOT}/runtime/toolhive/data" \
+     XDG_STATE_HOME="${POC_ROOT}/runtime/toolhive/state" \
+     "$THV" list 2>/dev/null | grep -q 'gw-dbhub.*running'; then
+    ok "DBHub gateway   running  $(dim ":19108/mcp")"
+  else
+    bad "DBHub gateway   in sandbox MCP but not running"
+  fi
+else
+  dim "  DBHub disabled (NKB_ENABLE_DBHUB=1 to opt in)"
 fi
 
 heading "Repositories"

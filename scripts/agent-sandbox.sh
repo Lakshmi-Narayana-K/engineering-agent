@@ -53,6 +53,59 @@ MOUNTS=(
   --mount "type=bind,source=$ROOT/AGENTS.md,target=/workspace/AGENTS.md,readonly"
   --mount "type=bind,source=$WORKSPACE/agent-state,target=/home/agent/.cursor"
   --tmpfs "/tmp:rw,noexec,nosuid,size=512m"
+)
+if [[ -d "$ROOT/.cursor/rules" ]]; then
+  MOUNTS+=(
+    --mount "type=bind,source=$ROOT/.cursor/rules,target=/home/agent/.cursor/rules,readonly"
+  )
+fi
+
+# Read-only Django shell (start-local-shared.sh): host env_prod/env_beta + Poetry venv.
+django_shell_mounts() {
+  local nkb_root env_prod env_beta
+  nkb_root="$(readlink -f "$ROOT/repos/nkb_backend" 2>/dev/null || true)"
+  [[ -d "$nkb_root/.venv" ]] || return 0
+  local shell_dir="$ROOT/runtime/django-prod-shell"
+  [[ -f "$shell_dir/django-env-shell.sh" ]] || return 0
+
+  local need_jobs=0
+  env_prod="$(tr -d '\n' <"$ROOT/runtime/prod-django-env.path" 2>/dev/null || true)"
+  env_beta="$(tr -d '\n' <"$ROOT/runtime/beta-django-env.path" 2>/dev/null || true)"
+  [[ -f "$env_prod" ]] || env_prod="$(readlink -f "$ROOT/repos/nkb_backend/env_prod.sh" 2>/dev/null || true)"
+  [[ -f "$env_beta" ]] || env_beta="$(readlink -f "$ROOT/repos/nkb_backend/env_beta.sh" 2>/dev/null || true)"
+
+  if [[ -f "$ROOT/runtime/.prod-django-shell-enabled" && -f "$env_prod" ]]; then
+    MOUNTS+=(
+      --mount "type=bind,source=$env_prod,target=/workspace/secrets/prod-django.env,readonly"
+      --mount "type=bind,source=$shell_dir/django-prod-shell.sh,target=/workspace/tools/django-prod-shell,readonly"
+      --mount "type=bind,source=$ROOT/runtime/.prod-django-shell-enabled,target=/workspace/secrets/.prod-django-enabled,readonly"
+    )
+    need_jobs=1
+  fi
+  if [[ -f "$ROOT/runtime/.beta-django-shell-enabled" && -f "$env_beta" ]]; then
+    MOUNTS+=(
+      --mount "type=bind,source=$env_beta,target=/workspace/secrets/beta-django.env,readonly"
+      --mount "type=bind,source=$shell_dir/django-beta-shell.sh,target=/workspace/tools/django-beta-shell,readonly"
+      --mount "type=bind,source=$ROOT/runtime/.beta-django-shell-enabled,target=/workspace/secrets/.beta-django-enabled,readonly"
+    )
+    need_jobs=1
+  fi
+  if [[ "$need_jobs" -eq 1 ]]; then
+    MOUNTS+=(
+      --mount "type=bind,source=$shell_dir/django-env-shell.sh,target=/workspace/tools/django-env-shell.sh,readonly"
+      --mount "type=bind,source=$nkb_root/.venv,target=/workspace/nkb-venv,readonly"
+    )
+    mkdir -p "$ROOT/runtime/django-jobs"
+    MOUNTS+=(
+      --mount "type=bind,source=$ROOT/runtime/django-jobs,target=/workspace/django-jobs"
+    )
+  fi
+}
+if [[ -f "$ROOT/runtime/.prod-django-shell-enabled" || -f "$ROOT/runtime/.beta-django-shell-enabled" ]]; then
+  django_shell_mounts
+fi
+
+MOUNTS+=(
   # HOME itself must be writable, not just ~/.cursor. With a read-only root
   # filesystem and only ~/.cursor mounted, session creation failed with
   # "Failed to initialize session services" and no further diagnostic - Cursor

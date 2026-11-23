@@ -1,0 +1,32 @@
+---
+description: Run DRY_RUN=True Django scripts against prod; never apply writes
+alwaysApply: true
+---
+
+# Prod dry-run scripts (unlink, migrations, one-offs)
+
+When the user asks for a **script** that touches prod data and **`DRY_RUN = True`**
+(or equivalent “print only, no writes”):
+
+1. **Do not** stop at “UNKNOWN until someone runs it.”
+2. Save the script under **`/workspace/generated/`** (you may write there).
+3. **Run it immediately:**
+   ```bash
+   django-prod-shell -f /workspace/generated/<script>.py
+   ```
+4. Paste the **stdout** into the answer (join rows, hierarchy diffs, counts).
+
+Do **not** tell the user to “switch to Agent mode” instead of running a read-only
+dry-run — if the shell works, running the dry-run is your job.
+
+## Hard stops (prod safety)
+
+- **Never** set `DRY_RUN = False` or run deletes/updates on prod through this agent.
+  The DB user is read-only; applying writes is out of scope for this workspace.
+- If the user explicitly wants **apply** on prod, say that must be done outside this
+  shared read-only agent (their own approved ops process), not via Canvas.
+
+## After the dry-run
+
+Summarize: what join rows exist, what would be removed from hierarchy, what is already
+absent. Separate **code review** of the script from **live dry-run output**.

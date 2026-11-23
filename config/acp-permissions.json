@@ -15,8 +15,12 @@
     "Compound commands are split on && || ; and | and every segment is checked,",
     "so `git log && aws s3 ls` is denied on the second segment."
   ],
+  "editableRoots": [
+    "/workspace/generated/"
+  ],
   "allowedToolKinds": [
     "read",
+    "edit",
     "search",
     "execute",
     "think",
@@ -43,8 +47,8 @@
     "\\bnode\\s+-e\\b",
     "\\bperl\\s+-e\\b",
     "\\bruby\\s+-e\\b",
-    ">\\s*/",
-    ">>",
+    ">\\s*/(?!dev/null\\b)(?!workspace/generated/)",
+    ">>\\s*/(?!workspace/generated/)",
     "\\brm\\b",
     "\\bmv\\b",
     "\\bchmod\\b",
@@ -91,7 +95,9 @@
     "pwd",
     "true",
     "test",
-    "cd"
+    "cd",
+    "django-prod-shell",
+    "django-beta-shell"
   ],
   "git": {
     "allowedSubcommands": [
@@ -190,7 +196,8 @@
         "server is attached yet."
       ],
       "gatedTools": [
-        "sql-probe:run_query"
+        "sql-probe:run_query",
+        "dbhub:execute_sql"
       ],
       "argumentField": "sql",
       "allowedStatements": [

@@ -16,6 +16,15 @@
 # rather than ~/.aws so the workspace stays self-contained and the developer's
 # own AWS profiles are never reachable from the agent's process tree.
 /runtime/aws/
+/runtime/dbhub.toml
+/runtime/.prod-django-shell-enabled
+/runtime/.beta-django-shell-enabled
+/runtime/prod-django-env.path
+/runtime/beta-django-env.path
+/runtime/django-jobs/
+/runtime/django-prod-worker.pid
+/runtime/sandbox-cursor-staging/
+/runtime/toolhive/db-permissions.local.json
 
 # Cursor API key. runtime/cursor/ is otherwise tracked because the shim lives
 # there, so this needs its own entry rather than relying on a directory rule.
@@ -29,6 +38,13 @@
 # Rapid7 InsightIDR API key, referenced from .cursor/mcp.json as
 # ${file:runtime/rapid7/api-key} so the declaration itself stays committable.
 /runtime/rapid7/
+
+# Google service account key for the Sheets server. Unlike AWS, where the agent
+# gets short-lived STS credentials, this is a non-expiring private key: it is
+# valid until someone revokes it in the Cloud console. That makes committing it
+# worse than committing most secrets, because rotation is a manual act nobody
+# is prompted to perform.
+/runtime/google/
 
 # Symlinks to MCP server checkouts that live outside this workspace.
 /runtime/mcp/r7-insightidr

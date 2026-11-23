@@ -1,5 +1,5 @@
 ---
-description: How to investigate a question across the three NKB repositories
+description: How to investigate a question across the linked product repositories
 alwaysApply: true
 ---
 
@@ -37,9 +37,35 @@ When they disagree, report both, say which you verified, and add the discrepancy
 `knowledge/documentation-gaps.md` if it is not already recorded. Never edit the
 original docs.
 
+## Two families of repository, with different shapes
+
+`nkb_backend`, `nkb_assessment_backend` and `nkb_learning_backend` are Django services
+that share a clean-architecture layering. The layer table below applies to them.
+
+`ccbp-ide-drops-frontend` and `ccbp-ide-drops-infra` are the Drops browser IDE and do
+not follow it at all.
+
+- **`ccbp-ide-drops-frontend`** is Create React App with craco and `react-router-dom`
+  — not Next.js, despite a stray `.next/` directory in the working copy. Behaviour
+  lives in `src/` components, hooks and client state. Build-time configuration comes
+  from `.env.alpha` / `.env.prod` via `env-cmd`; **those files are excluded from this
+  workspace**, so if a `REACT_APP_*` variable decides something, you can name the
+  variable and where it is read but you cannot see its value. Say so rather than
+  inferring one.
+- **`ccbp-ide-drops-infra`** is a flat Python service (`ide_drops_infra_backend/`,
+  entry point `app.py`, no Django) plus the Dockerfiles for each IDE language runtime.
+  Read it for how a Drops session is provisioned and torn down — Fargate, ECS events,
+  DynamoDB, Redis, S3 — not for business rules. `deployment/` holds how it is wired.
+
+Neither Drops repository has `project_docs/`, so start from source.
+
+Do not reach for the layer table when the answer is in a React component, and do not
+assume a Drops question is a Django question because the other three repositories are
+Django.
+
 ## Trace real symbols
 
-Ground answers in named code, not directory names. These repositories follow a
+Ground answers in named code, not directory names. The Django repositories follow a
 clean-architecture layering, so the layer tells you where to look:
 
 | Question | Layer to read |

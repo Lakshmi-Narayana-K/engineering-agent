@@ -11,9 +11,9 @@ apply to every conversation regardless of how a request is phrased.
 
 ## The product repositories are read-only
 
-`repos/nkb_backend`, `repos/nkb_assessment_backend`, and `repos/nkb_learning_backend`
-are symlinks to real working checkouts that engineers use. A write here corrupts
-someone's working tree.
+`repos/nkb_backend`, `repos/nkb_assessment_backend`, `repos/nkb_learning_backend`,
+`repos/ccbp-ide-drops-frontend`, and `repos/ccbp-ide-drops-infra` are symlinks to real
+working checkouts that engineers use. A write here corrupts someone's working tree.
 
 Never, under `repos/**`:
 
@@ -37,21 +37,27 @@ Forbidden anywhere in this workspace: `git commit`, `git push`, `git add`,
 
 Never open a pull request.
 
-All three repositories already contain uncommitted changes. This is their normal
-state. Do not clean, stash, or "restore" them, and do not treat dirtiness as a problem
-to fix.
+Every repository already contains uncommitted changes. This is their normal state. Do
+not clean, stash, or "restore" them, and do not treat dirtiness as a problem to fix.
 
-## No live systems
+## Live systems (governed read-only paths only)
 
-This workspace reasons about source code, never about running infrastructure.
+Direct shell access to live infrastructure is forbidden, **except** through the
+governed read-only wrappers and MCP servers provided in this workspace:
 
-- **No AWS.** Do not run the `aws` CLI, boto3, or any SDK call. Do not read or use AWS
-  profiles or credentials. Code that references S3 buckets, SQS queues, SNS topics,
-  Lambda functions, or CloudWatch is *a source reference* — report that the reference
-  exists, never the live state of the resource.
-- **No databases.** Do not connect to Postgres, MySQL, Redis, or BigQuery. Do not run
-  `manage.py migrate`, `dbshell`, `shell`, or any management command that touches a
-  database. Describe schema from models; never report actual data.
+- **AWS & CloudWatch Logs:** Do not run the `aws` CLI or boto3 in the terminal. Use the
+  **`aws-api`** MCP server (`aws___run_script` calling `call_boto3` with read-only
+  operations like `DescribeLogGroups`, `FilterLogEvents`, `StartQuery`, `GetQueryResults`).
+  It runs with the host's default AWS profile in `ap-south-1`.
+- **Rapid7 InsightIDR Logs:** Use the **`rapid7-insightidr`** MCP server (`list_logs`,
+  `list_logsets`, `run_log_search`, `start_log_search`, `get_log_search_results`). Note
+  that the configured Rapid7 API key is scoped to **Log Search** (`eu.rest.logs.insight.rapid7.com`);
+  Investigations/Alerts endpoints (`eu.api.insight.rapid7.com`) may return 401/403,
+  which does **not** mean log search is unavailable.
+- **Production database:** Do not connect directly to Postgres, MySQL, Redis, or
+  BigQuery from raw `python`/`mysql` in the terminal. When `/workspace/tools/django-prod-shell`
+  or **`django-beta-shell`** is present (`start-local-shared.sh`), use those wrappers for
+  read-only ORM and SQL against prod (`env_prod`) or beta (`env_beta`) respectively.
 - **No network calls to product services.** Do not curl, resolve, or otherwise contact
   hostnames or URLs found in settings or environment files, on any environment
   including beta and gamma.
@@ -76,8 +82,15 @@ print, decrypt, copy, or transmit a secret value, and never write one into
 
 ## Where writing is allowed
 
-Writable: `context/`, `knowledge/`, `evaluations/`, `config/`, `runtime/`, and the
-workspace's own `AGENTS.md`, `README.md`, and `.cursor/` files.
+On the host POC tree, writable paths include `context/`, `knowledge/`, `evaluations/`,
+`config/`, `runtime/`, and the workspace's own `AGENTS.md`, `README.md`, and `.cursor/`
+files.
+
+Inside the **agent sandbox**, only **`/workspace/generated/`** is writable on disk
+(investigation scripts, query output, **CSV exports**, and other artefacts). Do not
+create or edit files under `repos/**` or try to write under `/workspace/context/` or
+`/workspace/knowledge/` — those mounts are read-only in the container even when a path
+looks writable on the host.
 
 Everything else, and all of `repos/**`, is read-only.
 

@@ -125,22 +125,13 @@ servers:
     credentials: toolhive environment secrets provider, profile nkb-agent-alpha
 
     tools:
-      - aws___call_aws            # IAM-bounded; the operation is an argument
+      - aws___run_script          # replaced aws___call_aws upstream; gated read-only in acp-policy-proxy
       - aws___get_tasks           # poll long-running calls
       - aws___list_regions
       - aws___search_documentation
       - aws___read_documentation
 
     excluded:
-      # Executes model-generated Python with boto3 access. Read-only IAM bounds
-      # what it can do, and CloudTrail still records every underlying API call,
-      # so this is defensible to enable later - but it is a far wider surface
-      # than an investigation needs, and the script itself is opaque to our
-      # audit even when its API calls are not. Excluded until there is a
-      # concrete need. Note AWS is deprecating call_aws in its favour, so this
-      # decision has an expiry date rather than being permanent.
-      - aws___run_script
-
       # Generates pre-signed S3 URLs for upload as well as download: a write
       # path and a data-egress path in one tool. Our IAM policy grants no S3
       # permissions so it would fail anyway, which makes excluding it free.
@@ -274,6 +265,96 @@ servers:
       - delete_detection_rule
       - delete_log
       - delete_logset
+
+  # Read-only Google Sheets access, added 2026-09-02.
+  #
+  # Added disabled, per the rule at the top of this file: a new server is
+  # started explicitly with NKB_TOOLHIVE_ONLY=google-sheets, tested, and only
+  # then flipped. Nothing about this one earns an exception.
+  #
+  # Why THIS server, since the obvious choice was the other one. The first
+  # attempt was uvx://mcp-google-sheets@0.6.3, the only Sheets server on PyPI.
+  # It does not run: it imports mcp.server.fastmcp, its dependency range does not
+  # cap mcp below 2.x, and FastMCP was renamed in mcp 2.0. The container starts,
+  # the import fails, ToolHive reports "ready" because the proxy is up, and the
+  # workload then crash-loops. `uvx --with "mcp<2"` fixes it, which is evidence
+  # both that the diagnosis is right and that the package is unmaintained enough
+  # to ship a broken install.
+  #
+  # mcp-gsheets is a better fit than the workaround anyway:
+  #   - it has no Drive tools at all, so "cannot enumerate spreadsheets" is a
+  #     property of the server rather than a list we maintain
+  #   - GSHEETS_READ_ONLY is enforced at tools/call, not only at tools/list
+  #   - every tool carries readOnlyHint / destructiveHint, so the allowlist below
+  #     is derived the same way the Rapid7 one is, not chosen by reading names
+  #   - 1.10.2 against 0.6.3, and it installs
+  - name: google-sheets
+    # Enabled after verification against a running instance on 2026-09-02:
+    # tools/list returned exactly the 6 below, and sheets_update_values,
+    # sheets_create_spreadsheet and sheets_format_cells were refused at
+    # tools/call with "tool not found" rather than merely hidden. Authentication
+    # was confirmed separately - sheets_check_access against a nonexistent ID
+    # returned "Spreadsheet not found" rather than an auth error, which proves
+    # the JWT exchange and both pinned egress hosts work.
+    enabled: true
+    protocol: "npx://mcp-gsheets@1.10.2"
+    proxy_port: 19109
+    transport: stdio
+    purpose: read and update cell values in Google Sheets shared with the service account
+    permissions: config/toolhive/google-permissions.json
+    credentials: >
+      toolhive environment secrets provider, GOOGLE_SERVICE_ACCOUNT_KEY. The
+      service account JSON at runtime/google/service-account.json is passed as a
+      single-line string by scripts/toolhive-up.sh. An env var rather than a
+      mounted file for the same reason as AWS: ToolHive drives its own Docker
+      socket, so a bind mount of a repository path may resolve to an empty
+      directory.
+
+    # Three layers:
+    #   1. mcp-gsheets + GSHEETS_TOOLSETS=core — cell read/write tools only.
+    #   2. ToolHive — explicit tool list; clear/format excluded; create allowed.
+    #   3. Google — Viewer on sources = read; Editor on sources = in-place edits;
+    #      new spreadsheets are created in the service account Drive (no ID allowlist).
+    # Layer 3 is still the real boundary: Viewer shares stay read-only at Google;
+    # Editor shares allow updates. ToolHive excludes create/clear/format tools.
+    authorization_boundary: >
+      The sharing level granted to
+      research-curriculum-sync@gen-lang-client-0231900166.iam.gserviceaccount.com
+      on each spreadsheet. Viewer = read-only at Google; Editor = updates allowed
+      through the cell write tools below. New output workbooks may be created with
+      sheets_create_spreadsheet (owned by the service account). No Drive listing.
+
+    env:
+      GSHEETS_READ_ONLY: "false"
+      GSHEETS_TOOLSETS: core
+
+    # Core read tools plus cell writers and new-spreadsheet creation. Clear,
+    # formatting, charts, and row/column delete stay out via `excluded`.
+    tools:
+      - sheets_check_access
+      - sheets_get_metadata
+      - sheets_get_sheet_structure
+      - sheets_get_sheet_dimensions
+      - sheets_get_values
+      - sheets_batch_get_values
+      - sheets_update_values
+      - sheets_batch_update_values
+      - sheets_append_values
+      - sheets_create_spreadsheet
+
+    excluded:
+      - sheets_clear_values
+
+      # The other 33 tools - formatting, charts, tables, merges, row and column
+      # insertion and deletion - are excluded by toolset rather than named here.
+      # All of them write.
+      #
+      # Worth recording what is NOT in this server's surface, because it is the
+      # reason no Drive allowlist is needed: there is no list-spreadsheets, no
+      # Drive search, and no share-spreadsheet. The agent can open a spreadsheet
+      # whose ID it was given and cannot discover or grant access to any other.
+      # With the other candidate that property had to be configured; here it is
+      # structural.
 
   # Phase 7. Still disabled, but no longer blocked on the unknown part.
   #

@@ -1,0 +1,49 @@
+---
+description: How to query Rapid7 InsightIDR logs and AWS CloudWatch logs via MCP
+alwaysApply: true
+---
+
+# Querying Rapid7 & CloudWatch Logs
+
+## 1. Rapid7 InsightIDR (`rapid7-insightidr` MCP)
+
+The Rapid7 gateway (`rapid7-insightidr`, region `eu`) is connected with a key scoped to
+**Log Search** (`eu.rest.logs.insight.rapid7.com`).
+
+- **Use Log Search tools:** `list_logs`, `list_logsets`, `run_log_search`,
+  `start_log_search`, `get_log_search_results`, `get_next_log_search_page`.
+- **Do not assume Rapid7 is broken if `list_investigations` or `search_alerts` returns
+  401/403.** Those hit `eu.api.insight.rapid7.com`, whereas application/Lambda logs
+  live on the Log Search host (`eu.rest.logs.insight.rapid7.com`) and work with
+  `list_logs` / `run_log_search`.
+- Time windows for `run_log_search` / `start_log_search` use **epoch milliseconds**
+  (`from_time`, `to_time`) or a relative `time_range` (mutually exclusive). Convert IST
+  (`UTC+05:30`) timestamps to UTC epoch milliseconds before querying.
+
+## 2. AWS CloudWatch Logs (`aws-api` MCP)
+
+There is no separate `cloudwatch` MCP server in the sandbox — CloudWatch Logs and AWS
+resources are queried through **`aws-api` → `aws___run_script`** using `call_boto3`
+(authenticated with the host's `AWS_PROFILE=default` in `ap-south-1`).
+
+Example `aws___run_script` payload to search CloudWatch Logs:
+```python
+result = await call_boto3(
+    service_name="logs",
+    operation_name="FilterLogEvents",
+    region_name="ap-south-1",
+    params={
+        "logGroupName": "/aws/lambda/ccbp-prod-...",
+        "startTime": 1727324400000,
+        "endTime": 1727327400000,
+        "filterPattern": "e9647eb7-a215-47ab-8866-3dc202f1f573",
+    },
+)
+result
+```
+- Discover log groups with `operation_name="DescribeLogGroups"` and
+  `params={"logGroupNamePrefix": "/aws/lambda/"}`.
+- Or run CloudWatch Logs Insights with `operation_name="StartQuery"` and
+  `operation_name="GetQueryResults"`.
+- Only read-only AWS operations (`Describe*`, `List*`, `Get*`, `FilterLogEvents`,
+  `StartQuery`) are permitted.

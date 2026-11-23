@@ -161,6 +161,65 @@ aws_mcp_server:
     The currently configured aws-api-mcp-server is deprecated. Verify the
     supported managed replacement against AWS documentation before adopting.
 
+google_sheets_mcp:
+  version: 1.10.2
+  source: "npm mcp-gsheets (github.com/freema/mcp-gsheets)"
+  install: resolved by ToolHive from protocol npx://mcp-gsheets@1.10.2
+  owns: read-only Google Sheets lookups by spreadsheet ID
+  rejected_alternative: >
+    uvx://mcp-google-sheets@0.6.3, the only Sheets server on PyPI and the
+    obvious first choice, does not run. It imports mcp.server.fastmcp while its
+    dependency range permits mcp 2.x, where FastMCP was renamed to MCPServer, so
+    the container starts and the import immediately fails. ToolHive reports the
+    workload ready because the proxy is up, then it crash-loops. Confirmed
+    fixable with `uvx --with "mcp<2"`, which is both the proof of diagnosis and
+    the reason not to adopt it: a package that ships an uninstallable dependency
+    range is not one to pin a credential to.
+  security_boundary: >
+    The sharing level on each individual spreadsheet. A sheet shared with the
+    service account as Viewer refuses writes at Google's authorization layer,
+    which is the backend-native boundary here - the counterpart of IAM for AWS.
+    Unlike Rapid7, where no such boundary exists under our control, this one
+    does, so it should be used rather than relying on tool admission alone.
+  credentials: >
+    Google service account private key, passed as single-line JSON in
+    GOOGLE_SERVICE_ACCOUNT_KEY by scripts/toolhive-up.sh, read from
+    runtime/google/service-account.json.
+  configuration: >
+    GSHEETS_READ_ONLY=true and GSHEETS_TOOLSETS=core, declared in
+    config/toolhive/servers.yaml. Together they reduce 44 tools to 6 and roughly
+    9,900 prompt tokens to 900. Read-only is checked at tools/call, so a client
+    cannot reach a write by naming a tool that was filtered out of tools/list.
+  caveats:
+    non_expiring_credential: >
+      A service account key is valid until revoked in the Cloud console. Every
+      other credential in this stack expires on its own: AWS is an STS session,
+      RDS IAM auth is a 15-minute token. This one does not, which is why egress
+      is pinned to two Google hosts and why rotation has to be a calendar item
+      rather than an assumption.
+    community_project: >
+      Single-author project, not published by Google. Mitigation is the same as
+      for Rapid7: restricted egress, explicit allowlist, audit, unprivileged
+      container. Unlike Rapid7 there is a backend-native boundary available, so
+      the mitigation is not carrying the whole weight.
+    write_tools_exist: >
+      The package ships 44 tools, most of which write. GSHEETS_READ_ONLY keeps
+      them out and ToolHive refuses them at tools/call, but neither is why a
+      write fails - Viewer sharing is. Confirm the sharing level before trusting
+      the other two.
+    no_drive_surface: >
+      Recorded because it is a property worth not losing on upgrade: this server
+      exposes no Drive listing, no Drive search and no sharing tool. The agent
+      can open a spreadsheet whose ID it was given and cannot discover or grant
+      access to any other. If a release adds Drive tools, that is a security
+      change, not a feature addition.
+  upgrade: >
+    Re-check the tool names against the new release before bumping. ToolHive
+    validates the allowlist against what the server advertises and fails at
+    startup on an unknown name, which is the desired behaviour, but it means a
+    rename shows up as a gateway that will not start.
+  fallback: disable the server in config/toolhive/servers.yaml
+
 rapid7_insightidr_mcp:
   version: 0.1.0
   commit: b059dcd

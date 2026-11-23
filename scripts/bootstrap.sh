@@ -44,13 +44,8 @@ fi
 
 heading "Repository links"
 
-# Source paths are declarative here so bootstrap works on a fresh checkout.
-declare -A REPO_SOURCES=(
-  [nkb_backend]=/home/nxtwave/Desktop/CodeBase-HUB/nkb_backend
-  [nkb_assessment_backend]=/home/nxtwave/Desktop/CodeBase-HUB/nkb_assessment_backend
-  [nkb_learning_backend]=/home/nxtwave/Desktop/CodeBase-HUB/nkb_learning_backend
-)
-
+# REPOS and REPO_SOURCES come from _common.sh so the links, the clean export and
+# the baseline check all read the same list.
 mkdir -p "${POC_ROOT}/repos" "$BASELINE_DIR" "$LOG_DIR"
 
 for repo in "${REPOS[@]}"; do

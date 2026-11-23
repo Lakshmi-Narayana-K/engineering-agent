@@ -43,14 +43,14 @@ type = "mysql"
 # The READER endpoint. Its hostname contains `cluster-ro-`; if what you paste
 # here does not, you are pointed at the writer and have silently given up the
 # strongest control in the design.
-host = "<CLUSTER>.cluster-ro-<SUFFIX>.ap-south-1.rds.amazonaws.com"
+host = "nkb-agent-test.cluster-ro-cixcfxcrztwn.ap-south-1.rds.amazonaws.com"
 port = 3306
 database = "nkb_agent_test"
 
 user = "nkb_agent_readonly"
 aws_iam_auth = true
 aws_region = "ap-south-1"
-aws_profile = "nkb-agent-alpha"
+aws_profile = "alpha"
 
 # The user is created REQUIRE SSL, so a non-TLS connection is refused by the
 # server. Setting it here as well means the failure is a clear TLS error rather

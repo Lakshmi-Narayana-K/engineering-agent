@@ -1,0 +1,93 @@
+---
+description: Prod and beta MySQL reads via Django shell (read-only, shared host)
+alwaysApply: true
+---
+
+# Prod and beta database reads (read-only)
+
+Same **`repos/nkb_backend`** codebase; only the sourced env file and DB data differ:
+
+| Environment | Wrapper | Host env file |
+| --- | --- | --- |
+| **Prod** | `django-prod-shell` | `env_prod.sh` |
+| **Beta** | `django-beta-shell` | `env_beta.sh` |
+
+When the matching **`/workspace/tools/django-*-shell`** exists, use it for live rows.
+In shared mode (`start-local-shared.sh`) commands **queue to the host worker** (Poetry
+venv on the Canvas machine) — the sandbox has no Python 3.12.
+
+**Pick the wrapper from the user’s question.** If they say prod/production/live, use
+`django-prod-shell`. If they say beta, use `django-beta-shell`. If unclear, ask which
+environment before querying.
+
+## Django shell (preferred for ORM)
+
+Prod:
+
+```bash
+django-prod-shell -c 'from some_app.models import M; print(M.objects.filter(...).count())'
+```
+
+Beta:
+
+```bash
+django-beta-shell -c 'from some_app.models import M; print(M.objects.filter(...).count())'
+```
+
+For longer snippets, write Python under `/workspace/generated/` and run:
+
+```bash
+django-prod-shell -f /workspace/generated/query.py
+# or
+django-beta-shell -f /workspace/generated/query.py
+```
+
+Do **not** run bare `python manage.py shell`, `poetry run`, or `source env_prod.sh` /
+`source env_beta.sh` in the terminal — policy blocks those; the wrapper loads the env.
+
+Both paths are **read-only by policy and by DB credentials** (reader / RO user). Writes
+via ORM or SQL should fail at the database if attempted.
+
+## Large tables: never bare `.count()`
+
+Especially on **prod**, tables such as `nkb_question_userresponse` are huge. A bare
+`Model.objects.count()` can run until the worker kills the job (~280s). For row-count
+questions:
+
+1. Run the estimate first (instant), and label it as approximate:
+   ```python
+   from django.db import connection
+   with connection.cursor() as c:
+       c.execute("SELECT TABLE_ROWS FROM information_schema.TABLES "
+                 "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                 ["nkb_question_userresponse"])
+       print(c.fetchone()[0])
+   ```
+2. Only compute exact counts with an indexed filter (date range, FK id, etc.).
+3. If the shell reports a slow-query timeout, **do not retry the same query**; narrow
+   the filter or use the estimate.
+
+Beta data volume may be smaller; still prefer filtered queries.
+
+## Plain SQL
+
+The `dbhub` MCP server is disabled by default. For SQL, use `django.db.connection.cursor()`
+inside the same wrapper (SELECT only).
+
+## Host requirements
+
+The Canvas host must have run `start-local-shared.sh` with VPN on and a working Poetry
+venv at the real `nkb_backend` checkout. Teammates on the LAN URL use **that host’s**
+prod/beta connections, not their own VPN.
+
+Override env paths when needed:
+
+```bash
+ENV_PROD=/path/to/env_prod.sh ENV_BETA=/path/to/env_beta.sh bash scripts/start-local-shared.sh
+```
+
+## If a tool is missing
+
+Say prod/beta Django shell is not enabled and suggest the operator re-run
+`bash scripts/start-local-shared.sh` (beta requires `env_beta.sh` on the host). Until
+then, answer from code/models only.

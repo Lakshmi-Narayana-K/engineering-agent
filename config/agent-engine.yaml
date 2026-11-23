@@ -88,6 +88,7 @@ workspace:
     - repos/nkb_backend
     - repos/nkb_assessment_backend
     - repos/nkb_learning_backend
+    - repos/kossip-web
     - context/
     - knowledge/
     - AGENTS.md

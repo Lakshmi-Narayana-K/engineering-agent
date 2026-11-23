@@ -28,7 +28,7 @@
       "env": {}
     },
     "insightidr": {
-      "command": "${poc:runtime/mcp/r7-insightidr/.venv/bin/mcp-insightidr}",
+      "command": "/home/nxtwave/Desktop/CodeBase-HUB/R7-InsightIDR-MCP-Server/.venv/bin/mcp-insightidr",
       "args": [],
       "env": {
         "INSIGHTIDR_API_KEY": "${file:runtime/rapid7/api-key}",

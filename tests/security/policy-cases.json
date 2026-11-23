@@ -308,6 +308,52 @@
         "kind": "fetch",
         "title": "Fetch https://example.com"
       }
+    },
+    {
+      "name": "edit: csv under generated",
+      "expect": "allow",
+      "owner": "acp-policy-proxy (editableRoots)",
+      "toolCall": {
+        "kind": "edit",
+        "title": "Write /workspace/generated/export.csv",
+        "locations": [
+          {
+            "path": "/workspace/generated/export.csv"
+          }
+        ]
+      }
+    },
+    {
+      "name": "edit: csv under repos",
+      "expect": "deny",
+      "owner": "sandbox (read-only mount)",
+      "toolCall": {
+        "kind": "edit",
+        "title": "Write /workspace/repos/nkb_backend/export.csv",
+        "locations": [
+          {
+            "path": "/workspace/repos/nkb_backend/export.csv"
+          }
+        ]
+      }
+    },
+    {
+      "name": "shell: redirect csv into generated",
+      "expect": "allow",
+      "owner": "acp-policy-proxy",
+      "toolCall": {
+        "kind": "execute",
+        "title": "echo id,name > /workspace/generated/export.csv"
+      }
+    },
+    {
+      "name": "shell: redirect csv into repos",
+      "expect": "deny",
+      "owner": "acp-policy-proxy",
+      "toolCall": {
+        "kind": "execute",
+        "title": "echo id,name > /workspace/repos/nkb_backend/export.csv"
+      }
     }
   ]
 }

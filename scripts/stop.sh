@@ -15,20 +15,17 @@
 # Unrelated Cursor, Node, Python, and Docker processes are never touched - in
 # particular the developer's Django server on port 8000.
 
+CANVAS_ONLY=0
+[[ "${1:-}" == "--canvas-only" ]] && CANVAS_ONLY=1
+
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 set +e
 
 # The gateway goes down deliberately, and first.
 #
-# It was already being stopped, just not on purpose: the port and descendant
-# sweep below caught ToolHive's proxy processes as collateral. That left the
-# workloads in a half-removed state while workspace/agent-state/mcp.json still
-# claimed they existed, which is how start.sh came to report a configured
-# gateway with nothing behind it.
-#
-# Asking ToolHive to stop its own workloads is also cleaner than signalling
-# them: it removes the containers rather than orphaning them.
-if [[ -x "$POC_ROOT/runtime/toolhive/bin/thv" ]]; then
+# Skipped with --canvas-only so ToolHive/DBHub keep running during a Canvas
+# restart (e.g. switching to --public with a new LOCAL_BACKEND_API_KEY).
+if [[ "$CANVAS_ONLY" -eq 0 ]] && [[ -x "$POC_ROOT/runtime/toolhive/bin/thv" ]]; then
   XDG_CONFIG_HOME="$POC_ROOT/runtime/toolhive/config" \
   XDG_DATA_HOME="$POC_ROOT/runtime/toolhive/data" \
   XDG_STATE_HOME="$POC_ROOT/runtime/toolhive/state" \
@@ -67,8 +64,8 @@ else
   warn "no live pid recorded in runtime/agent-canvas.pid"
 fi
 
-# 2. listeners on this POC's ports
-for port in "$POC_PORT" "$AGENT_SERVER_PORT" 18001; do
+# 2. listeners on this POC's ports (ingress, agent-server, automation, frontend)
+for port in "$POC_PORT" "$AGENT_SERVER_PORT" 18001 "$CANVAS_FRONTEND_PORT"; do
   while read -r listener; do
     add_target "$listener"
   done < <(ss -tlnpH "sport = :${port}" 2>/dev/null |
@@ -77,6 +74,14 @@ done
 
 # 3. anything launched from this workspace (catches orphaned ACP subprocesses)
 while read -r stray; do
+  if [[ "$CANVAS_ONLY" -eq 1 ]]; then
+    # start-local-shared restarts Canvas while ToolHive/DBHub stay up; thv workers
+    # live under this POC path and must not be SIGKILL'd with the canvas tree.
+    ps -o args= -p "$stray" 2>/dev/null | grep -q 'runtime/toolhive/bin/thv' && continue
+    # Same for the prod Django worker: start-local-shared starts it before this
+    # canvas-only restart, so sweeping it here leaves every job unprocessed.
+    ps -o args= -p "$stray" 2>/dev/null | grep -q 'scripts/django-prod-host-worker.sh' && continue
+  fi
   add_target "$stray"
 done < <(pgrep -f "$POC_ROOT" 2>/dev/null)
 
@@ -119,10 +124,25 @@ fi
 
 still=0
 for pid in "${!TARGETS[@]}"; do
-  kill -0 "$pid" 2>/dev/null && { bad "pid $pid still running"; still=1; }
+  kill -0 "$pid" 2>/dev/null || continue
+  # Zombies answer kill -0 until the parent reaps them; they hold no ports and
+  # are not stoppable — treating them as survivors blocked restart after Ctrl+Z.
+  stat="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ')"
+  [[ "$stat" == Z* ]] && continue
+  bad "pid $pid still running"
+  still=1
 done
 
 rm -f "$PID_FILE" "${POC_ROOT}/runtime/.smoke-ok"
+if [[ "$CANVAS_ONLY" -eq 0 ]]; then
+  rm -f "${POC_ROOT}/runtime/.prod-django-shell-enabled"
+  rm -f "${POC_ROOT}/runtime/.beta-django-shell-enabled"
+  if [[ -f "${POC_ROOT}/runtime/django-prod-worker.pid" ]]; then
+    kill "$(cat "${POC_ROOT}/runtime/django-prod-worker.pid")" 2>/dev/null || true
+    rm -f "${POC_ROOT}/runtime/django-prod-worker.pid"
+  fi
+  pkill -f "scripts/django-prod-host-worker.sh" 2>/dev/null || true
+fi
 
 echo
 if [[ $still -eq 0 ]]; then
@@ -134,6 +154,9 @@ fi
 
 if ss -tln 2>/dev/null | grep -q ":${POC_PORT}\b"; then
   warn "port ${POC_PORT} still bound by something outside this POC"
+fi
+if ss -tln 2>/dev/null | grep -q ":${CANVAS_FRONTEND_PORT}\b"; then
+  warn "port ${CANVAS_FRONTEND_PORT} (canvas frontend) still bound - a new agent-canvas will fail until it is free"
 fi
 
 # Sanity check: the developer's Django server must be untouched.

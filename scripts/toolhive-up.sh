@@ -29,7 +29,21 @@ CONFIG="$ROOT/config/toolhive/servers.yaml"
 [[ -x "$THV" ]] || { echo "thv not found - run scripts/toolhive-install.sh" >&2; exit 1; }
 [[ -f "$CONFIG" ]] || { echo "missing $CONFIG" >&2; exit 1; }
 
-# Tab-separated so tool lists and endpoints survive intact.
+# Unit-separated (0x1f), NOT tab-separated, and the difference is not cosmetic.
+#
+# Tab is an IFS whitespace character, so `read` collapses a run of them into one
+# delimiter. Any server with an empty field in the middle - no endpoint, no
+# region - therefore shifted every field after it to the left. aws-api sets both
+# and parsed correctly, which is why this survived: the one server that worked
+# was the one being tested.
+#
+# The failure is silent and it fails OPEN. A shifted row leaves needs_creds
+# empty, so the credential branch never runs, so the server starts with neither
+# its secret nor its --permission-profile - that is, with unrestricted egress.
+# A server that cannot authenticate is obvious; a server whose network policy
+# quietly did not apply is not.
+#
+# 0x1f is not IFS whitespace, so empty fields stay empty and stay in position.
 mapfile -t ROWS < <(python3 - "$CONFIG" <<'PY'
 import os, sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1]))
@@ -50,7 +64,12 @@ for s in cfg.get("servers", []):
         # Default-deny: a server with no allowlist would expose everything it has.
         print(f"SKIP {s['name']}: no tools allowlisted", file=sys.stderr)
         continue
-    print("\t".join([
+    # Non-secret environment declared alongside the allowlist it belongs with,
+    # so a server's tool surface and the flags that shape it are read from one
+    # place. Pipe-separated within its own field; a value containing a pipe
+    # would be a secret and belongs in the secrets provider instead.
+    env = "|".join(f"{k}={v}" for k, v in (s.get("env") or {}).items())
+    print("\x1f".join([
         s["name"],
         s.get("protocol") or s.get("image") or s.get("registry") or s["name"],
         str(s.get("proxy_port", "")),
@@ -59,6 +78,7 @@ for s in cfg.get("servers", []):
         s.get("endpoint", ""),
         s.get("region", ""),
         "yes" if s.get("credentials") else "no",
+        env,
     ]))
 PY
 )
@@ -67,7 +87,7 @@ if [[ "${1:-}" == "--stop" ]]; then
   echo
   echo "Stopping gateway"
   for row in "${ROWS[@]}"; do
-    name="gw-$(cut -f1 <<<"$row")"
+    name="gw-$(cut -d$'\x1f' -f1 <<<"$row")"
     "$THV" stop "$name" >/dev/null 2>&1 && echo "  stopped $name" || true
     "$THV" rm "$name" >/dev/null 2>&1 || true
   done
@@ -102,30 +122,52 @@ PY
   [[ -n "${TOOLHIVE_SECRET_AWS_ACCESS_KEY_ID:-}" ]]
 }
 
-# Rapid7's key currently lives in the host Cursor MCP config, which is the only
-# place it exists today. Read here rather than copied into a second file, so
-# there is one source of truth; when the host config goes away this is the one
-# function that needs repointing.
+# Rapid7's key lives in runtime/rapid7/api-key, which is also what
+# .cursor/mcp.json points at via ${file:runtime/rapid7/api-key}.
 #
-# The point of doing this at all: after this change Cursor no longer holds the
-# Rapid7 credential. Only this container does, and its egress is restricted to
-# the Rapid7 API host.
+# It used to be read out of .cursor/mcp.json directly, from the days when the
+# literal key sat in that file. Once the key moved to its own gitignored file
+# and mcp.json kept only the placeholder, this function started finding a
+# string beginning with "${" and correctly declining to use it - and the server
+# should have been skipped from that point on. It was not, because the row
+# parsing bug above meant needs_creds never reached this branch at all. Two bugs
+# concealing each other: the config was stale, and the check that would have
+# reported it never ran.
+#
+# The point of doing this at all: Cursor no longer holds the Rapid7 credential.
+# Only this container does, and its egress is restricted to the Rapid7 API host.
 stage_rapid7_secrets() {
-  local cfg="$ROOT/.cursor/mcp.json"
-  [[ -f "$cfg" ]] || return 1
+  local key_file="$ROOT/runtime/rapid7/api-key"
+  [[ -s "$key_file" ]] || return 1
   # Value is exported into this process only and never printed.
-  eval "$(python3 - "$cfg" <<'PYR7'
+  TOOLHIVE_SECRET_INSIGHTIDR_API_KEY="$(tr -d '[:space:]' <"$key_file")"
+  export TOOLHIVE_SECRET_INSIGHTIDR_API_KEY
+  [[ -n "$TOOLHIVE_SECRET_INSIGHTIDR_API_KEY" ]]
+}
+
+# The Google service account key, passed as a single-line JSON string. Read from
+# the one file rather than kept as a second, pre-formatted copy, so rotation is
+# one file to replace - and it will need rotating, because unlike every other
+# credential in this stack a service account key does not expire on its own.
+stage_google_secrets() {
+  local key="$ROOT/runtime/google/service-account.json"
+  [[ -f "$key" ]] || return 1
+  # Value is exported into this process only and never printed.
+  eval "$(python3 - "$key" <<'PYG'
 import json, shlex, sys
+# Parsed before it is passed on. A truncated or half-pasted key otherwise
+# reaches the container and surfaces as an authentication failure on the first
+# tool call, which nobody connects back to the file they just edited.
 try:
-    env = json.load(open(sys.argv[1]))["mcpServers"]["insightidr"]["env"]
+    doc = json.load(open(sys.argv[1]))
 except Exception:
     sys.exit(0)
-key = env.get("INSIGHTIDR_API_KEY", "")
-if key and not key.startswith("${"):
-    print(f"export TOOLHIVE_SECRET_INSIGHTIDR_API_KEY={shlex.quote(key)}")
-PYR7
+if doc.get("type") != "service_account" or not doc.get("private_key"):
+    sys.exit(0)
+print(f"export TOOLHIVE_SECRET_GOOGLE_SERVICE_ACCOUNT_KEY={shlex.quote(json.dumps(doc))}")
+PYG
 )"
-  [[ -n "${TOOLHIVE_SECRET_INSIGHTIDR_API_KEY:-}" ]]
+  [[ -n "${TOOLHIVE_SECRET_GOOGLE_SERVICE_ACCOUNT_KEY:-}" ]]
 }
 
 echo
@@ -159,8 +201,16 @@ PYGEN
 }
 
 for row in "${ROWS[@]}"; do
-  IFS=$'\t' read -r name package port tools transport endpoint region needs_creds <<<"$row"
+  IFS=$'\x1f' read -r name package port tools transport endpoint region needs_creds envs <<<"$row"
   workload="gw-$name"
+
+  # Fails closed on a malformed row rather than starting a server with whatever
+  # the shifted fields happened to contain. This is the check that would have
+  # caught the tab-collapsing bug at the point it happened.
+  if [[ -z "$name" || ( "$needs_creds" != yes && "$needs_creds" != no ) ]]; then
+    echo "  skipping         gw-$name (malformed row from $CONFIG)" >&2
+    continue
+  fi
 
   if "$THV" list 2>/dev/null | grep -q "$workload.*running"; then
     echo "  already running  $workload"
@@ -185,6 +235,14 @@ for row in "${ROWS[@]}"; do
       echo "  skipping         $workload (no INSIGHTIDR_API_KEY available)" >&2
       continue
     fi
+  elif [[ "$needs_creds" == yes && "$name" == google-* ]]; then
+    if stage_google_secrets; then
+      args+=(--permission-profile config/toolhive/google-permissions.json)
+      args+=(--secret "GOOGLE_SERVICE_ACCOUNT_KEY,target=GOOGLE_SERVICE_ACCOUNT_KEY")
+    else
+      echo "  skipping         $workload (no service account key at runtime/google/service-account.json)" >&2
+      continue
+    fi
   elif [[ "$needs_creds" == yes ]]; then
     if stage_aws_secrets; then
       args+=(--permission-profile config/toolhive/aws-permissions.json)
@@ -199,6 +257,12 @@ for row in "${ROWS[@]}"; do
       echo "  skipping         $workload (no scoped credentials at runtime/aws/credentials)" >&2
       continue
     fi
+  fi
+
+  # Declared env from servers.yaml, applied after the credential branches so a
+  # server's own flags cannot quietly overwrite a region or a secret target.
+  if [[ -n "$envs" ]]; then
+    while IFS= read -r e; do [[ -n "$e" ]] && args+=(--env "$e"); done < <(tr '|' '\n' <<<"$envs")
   fi
 
   while IFS= read -r t; do args+=(--tools "$t"); done < <(tr ',' '\n' <<<"$tools")

@@ -1,0 +1,36 @@
+{
+  "capturedAt": "2026-08-26T09:40:00Z",
+  "phase": "7 - alpha Aurora MySQL test cluster",
+  "account": "934167421030",
+  "profile": "alpha",
+  "cluster": "nkb-agent-test",
+  "readerEndpoint": "nkb-agent-test.cluster-ro-cixcfxcrztwn.ap-south-1.rds.amazonaws.com",
+  "instanceClass": "db.t4g.medium",
+  "note": "Smallest provisioned Aurora class in ap-south-1; db.t4g.micro and db.t4g.small are not offered for aurora-mysql.",
+  "isolatedResources": [
+    "vpc nkb-agent-test-vpc (10.40.0.0/24)",
+    "subnets nkb-agent-test-private-a/b, nkb-agent-test-public",
+    "sg nkb-agent-test-db-sg, nkb-agent-test-bastion-sg",
+    "iam nkb-agent-test-bastion-role, nkb-agent-test-bastion-profile",
+    "ec2 nkb-agent-test-bastion (t3.micro)",
+    "rds cluster nkb-agent-test + writer + reader"
+  ],
+  "untouched": [
+    "agentic-ide-db",
+    "n8n-testing-db",
+    "n8n-testing-vpc",
+    "nxtwave-vpc",
+    "agentic-ide-vpc"
+  ],
+  "checks": [
+    { "check": "SELECT on reader as nkb_agent_readonly", "result": "pass", "detail": "COUNT(*) = 1 on probe_users" },
+    { "check": "CREATE on reader", "result": "pass", "detail": "ERROR 1290 read-only (engine boundary)" },
+    { "check": "INSERT on reader", "result": "pass", "detail": "ERROR 1290 read-only (engine boundary)" },
+    { "check": "SELECT mysql.user", "result": "pass", "detail": "ERROR 1142 grant denied" }
+  ],
+  "nextSteps": [
+    "Enable dbhub in config/toolhive/servers.yaml after ToolHive + DBHub smoke test",
+    "Run agent platform with DBHub behind gateway (requires in-VPC agent or SSM port-forward)",
+    "Teardown with: AWS_PROFILE=alpha bash scripts/provision-alpha-db.sh --teardown"
+  ]
+}

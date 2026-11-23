@@ -215,6 +215,40 @@ function evaluateSql(toolCall) {
 }
 
 /*
+ * Read-only guard for aws-api (aws___run_script / aws___call_aws) when the host
+ * uses a developer's AWS_PROFILE=default rather than a strictly read-only IAM role.
+ */
+const AWS_MUTATING_VERB =
+  /\b(create|delete|update|put|remove|terminate|stop-instances|start-instances|reboot|modify|attach|detach|associate|disassociate|revoke|authorize|deauthorize|register|deregister|publish|send-message|purge|invoke|run-instances|execute-statement|batch-write|batch-delete|cancel|disable|enable|reset|restore|import|export|tag-resource|untag-resource|set-|add-|release-)-[a-z0-9-]+/i;
+
+const AWS_MUTATING_PASCAL =
+  /\b(Create|Delete|Update|Put|Remove|Terminate|StopInstances|StartInstances|Reboot|Modify|Attach|Detach|Associate|Disassociate|Revoke|Authorize|Deauthorize|Register|Deregister|Publish|SendMessage|Purge|Invoke|RunInstances|ExecuteStatement|BatchWrite|BatchDelete|Cancel|Disable|Enable|Reset|Restore|Import|Export|TagResource|UntagResource|Set|Add|Release)[A-Z][A-Za-z0-9]*/;
+
+function evaluateAwsCall(tool, toolCall) {
+  const args = toolArguments(toolCall);
+  if (tool === "aws___run_script") {
+    const code = String(args?.code ?? "").trim();
+    if (!code) {
+      return { allow: false, reason: "could not read code from aws___run_script" };
+    }
+    const bad = AWS_MUTATING_PASCAL.exec(code) ?? AWS_MUTATING_VERB.exec(code);
+    if (bad) {
+      return { allow: false, reason: `aws___run_script mutating operation '${bad[0]}' denied` };
+    }
+    return { allow: true, reason: "aws___run_script read operation permitted" };
+  }
+  const cli = String(args?.cli_command ?? args?.command ?? "").trim();
+  if (!cli) {
+    return { allow: false, reason: "could not read cli_command from aws___call_aws" };
+  }
+  const bad = AWS_MUTATING_VERB.exec(cli);
+  if (bad) {
+    return { allow: false, reason: `aws___call_aws mutating operation '${bad[0]}' denied` };
+  }
+  return { allow: true, reason: "aws___call_aws read operation permitted" };
+}
+
+/*
  * MCP admission belongs to ToolHive, not here.
  *
  * The gateway refuses a non-admitted tool on tools/call and does not advertise
@@ -254,7 +288,36 @@ function evaluateMcp(title, toolCall) {
     return evaluateSql(toolCall);
   }
 
+  if (tool === "aws___call_aws" || tool === "aws___run_script") {
+    return evaluateAwsCall(tool, toolCall);
+  }
+
   return { allow: true, reason: `MCP tool '${server}:${tool}' admitted by ToolHive` };
+}
+
+function isDjangoEnvShellInvocation(command) {
+  return /^\s*(\/workspace\/tools\/)?django-(prod|beta)-shell\s/.test(command);
+}
+
+/*
+ * Edits are allowed only inside editableRoots (the sandbox's one writable mount).
+ * Paths are normalised first so "/workspace/generated/../repos/x" cannot escape.
+ */
+function evaluateEdit(title, toolCall) {
+  const roots = policy.editableRoots ?? [];
+  let paths = (toolCall?.locations ?? []).map((l) => l?.path).filter(Boolean);
+  if (paths.length === 0) {
+    const m = /^\s*\S+\s+(\/\S+)/.exec(title);
+    if (m) paths = [m[1]];
+  }
+  if (paths.length === 0) return { allow: false, reason: "edit without a target path" };
+  for (const p of paths) {
+    const resolved = path.posix.normalize(p);
+    if (!roots.some((root) => resolved.startsWith(root))) {
+      return { allow: false, reason: `edit outside editableRoots: ${resolved}` };
+    }
+  }
+  return { allow: true, reason: "edit inside editableRoots" };
 }
 
 function evaluateCommand(command) {
@@ -262,6 +325,17 @@ function evaluateCommand(command) {
 
   const denied = matchesAny(policy.deniedPatterns, command);
   if (denied) return { allow: false, reason: `matched denied pattern /${denied}/` };
+
+  /*
+   * django-prod-shell -c '...' is almost always one logical command, but the ORM
+   * one-liner contains semicolons (for x in y: a=1; b=2). splitSegments treats
+   * every ';' as a shell segment boundary, so the tail fragments have no command
+   * base and fail with "could not determine command base". Treat any invocation
+   * as atomic once deniedPatterns have passed.
+   */
+  if (isDjangoEnvShellInvocation(command)) {
+    return { allow: true, reason: "django-prod-shell permitted" };
+  }
 
   for (const segment of splitSegments(command)) {
     const base = commandBase(segment);
@@ -292,6 +366,10 @@ function evaluate(toolCall) {
 
   const title = normaliseCommand(toolCall?.title);
 
+  if (kind === "execute" && isDjangoEnvShellInvocation(title)) {
+    return evaluateCommand(title);
+  }
+
   /*
    * Secret-bearing paths are checked for every tool kind, not just execute.
    *
@@ -309,6 +387,8 @@ function evaluate(toolCall) {
   switch (kind) {
     case "execute":
       return evaluateCommand(title);
+    case "edit":
+      return evaluateEdit(title, toolCall);
     case "other":
       return evaluateMcp(title, toolCall);
     case "fetch":

@@ -23,16 +23,19 @@
 #
 # Default output is workspace/repos/. Exits non-zero if the guarantee fails.
 
-set -euo pipefail
+# REPOS comes from _common.sh. It was duplicated here until the Drops repos were
+# added and the two lists disagreed: the symlinks had five repositories and the
+# export produced three, which is the failure mode that looks like a missing
+# file rather than a configuration error.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$POC_ROOT"
 cd "$ROOT"
 
 OUT="$ROOT/workspace/repos"
 if [[ "${1:-}" == "--out" ]]; then OUT="${2:?--out needs a directory}"; fi
 
 EXCLUDES="$ROOT/config/workspace-exclude.txt"
-REPOS=(nkb_backend nkb_assessment_backend nkb_learning_backend)
 LOG_DEPTH=200
 
 [[ -f "$EXCLUDES" ]] || { echo "missing $EXCLUDES" >&2; exit 1; }

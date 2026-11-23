@@ -93,6 +93,10 @@
       "Shell(basename)",
       "Shell(dirname)",
       "Shell(realpath)",
+      "Shell(/workspace/tools/django-prod-shell)",
+      "Shell(django-prod-shell)",
+      "Shell(/workspace/tools/django-beta-shell)",
+      "Shell(django-beta-shell)",
 
       "Read(repos/**)",
       "Read(context/**)",
@@ -104,7 +108,9 @@
 
       "Write(context/**)",
       "Write(knowledge/**)",
-      "Write(evaluations/**)"
+      "Write(evaluations/**)",
+      "Write(/workspace/generated/**)",
+      "Write(/workspace/generated/**/*.csv)"
     ]
   }
 }
