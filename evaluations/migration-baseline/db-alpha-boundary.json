@@ -1,10 +1,10 @@
 {
   "capturedAt": "2026-08-26T09:40:00Z",
   "phase": "7 - alpha Aurora MySQL test cluster",
-  "account": "934167421030",
+  "account": "<AGENT_ACCOUNT_ID>",
   "profile": "alpha",
   "cluster": "nkb-agent-test",
-  "readerEndpoint": "nkb-agent-test.cluster-ro-cixcfxcrztwn.ap-south-1.rds.amazonaws.com",
+  "readerEndpoint": "<CLUSTER>.cluster-ro-<SUFFIX>.ap-south-1.rds.amazonaws.com",
   "instanceClass": "db.t4g.medium",
   "note": "Smallest provisioned Aurora class in ap-south-1; db.t4g.micro and db.t4g.small are not offered for aurora-mysql.",
   "isolatedResources": [

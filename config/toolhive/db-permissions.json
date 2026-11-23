@@ -24,7 +24,7 @@
     "outbound": {
       "insecure_allow_all": false,
       "allow_host": [
-        "nkb-agent-test.cluster-ro-cixcfxcrztwn.ap-south-1.rds.amazonaws.com",
+        "<CLUSTER>.cluster-ro-<SUFFIX>.ap-south-1.rds.amazonaws.com",
         "rds.ap-south-1.amazonaws.com"
       ],
       "allow_port": [3306, 443]

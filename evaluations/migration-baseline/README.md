@@ -71,7 +71,7 @@ before the ACP rewrite.
 
 This is the one result that does not depend on our code being correct, which
 makes it the gate for deleting the custom AWS parser in Phase 5. Identity is
-`arn:aws:iam::934167421030:user/nkb-agent-readonly-alpha`. Seven destructive
+`arn:aws:iam::<AGENT_ACCOUNT_ID>:user/nkb-agent-readonly-alpha`. Seven destructive
 calls return `AccessDenied` from AWS, three granted reads succeed, and nine
 actions return `explicitDeny` from the IAM simulator.
 
